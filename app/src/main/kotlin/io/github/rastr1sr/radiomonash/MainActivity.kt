@@ -29,6 +29,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.core.content.ContextCompat
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
@@ -53,7 +54,7 @@ private fun Radio() {
     val context = LocalContext.current
     var controller by remember { mutableStateOf<MediaController?>(null) }
     var on by remember { mutableStateOf(false) }
-    var title by remember { mutableStateOf<CharSequence?>(null) }
+    var meta by remember { mutableStateOf(MediaMetadata.EMPTY) }
     DisposableEffect(context) {
         val token = SessionToken(context, ComponentName(context, PlaybackService::class.java))
         val future = MediaController.Builder(context, token).buildAsync()
@@ -61,7 +62,7 @@ private fun Radio() {
             val c = future.get()
             val update = {
                 on = c.playWhenReady && c.playbackState != Player.STATE_IDLE
-                title = c.mediaMetadata.title
+                meta = c.mediaMetadata
             }
             c.addListener(object : Player.Listener {
                 override fun onEvents(player: Player, events: Player.Events) = update()
@@ -77,7 +78,9 @@ private fun Radio() {
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text(title?.toString() ?: stringResource(R.string.app_name))
+            Text(meta.title?.toString() ?: stringResource(R.string.app_name))
+            meta.artist?.let { Text(it.toString()) }
+            meta.station?.let { Text(it.toString()) }
             Button(
                 onClick = {
                     controller?.run {

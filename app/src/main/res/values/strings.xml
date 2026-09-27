@@ -2,4 +2,9 @@
   <string name="app_name">Lemon Scented</string>
   <string name="play">Play</string>
   <string name="stop">Stop</string>
+  <string name="player">Player</string>
+  <string name="schedule">Schedule</string>
+  <string name="live">Live</string>
+  <string name="schedule_failed">Couldn\'t load the schedule</string>
+  <string name="retry">Retry</string>
 </resources>

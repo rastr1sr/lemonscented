@@ -2,6 +2,7 @@ package io.github.rastr1sr.radiomonash
 
 import android.text.format.DateFormat
 import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -51,6 +52,7 @@ internal class Show(
     val start: Instant,
     val end: Instant,
     val live: Boolean,
+    val description: String?,
 )
 
 private var cache: List<Show>? = null
@@ -85,6 +87,7 @@ internal fun parseSchedule(json: JSONObject): List<Show> {
             Instant.parse(it.getString("start")),
             Instant.parse(it.getString("end")),
             it.optJSONObject("media")?.str("type") == "live",
+            tipTapText(it.optJSONObject("description")),
         )
     }.sortedBy { it.start }
 }
@@ -148,6 +151,7 @@ fun Schedule(modifier: Modifier = Modifier) {
             ?.toDp() ?: 0.dp
     }
     val liveWidth = with(density) { measurer.measure(live, liveStyle).size.width.toDp() }
+    var open by remember { mutableStateOf<String?>(null) }
     LazyColumn(modifier) {
         loaded.filter { it.end > now }.groupBy {
             it.start.atZone(zone).toLocalDate()
@@ -164,6 +168,12 @@ fun Schedule(modifier: Modifier = Modifier) {
                 val onNow = now >= show.start && now < show.end
                 ListItem(
                     headlineContent = { Text(show.title, Modifier.basicMarquee(), maxLines = 1) },
+                    modifier = Modifier.clickable(enabled = show.description != null) {
+                        open = if (open == show.id) null else show.id
+                    },
+                    supportingContent = show.description?.takeIf {
+                        open == show.id
+                    }?.let { { Text(it) } },
                     leadingContent = {
                         Text(
                             show.start.atZone(zone).format(time),

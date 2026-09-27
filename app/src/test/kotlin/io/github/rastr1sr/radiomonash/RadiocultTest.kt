@@ -45,4 +45,19 @@ class RadiocultTest {
         )
         assertEquals("off", airMode(JSONObject("""{"status":"offAir"}""")))
     }
+
+    @Test
+    fun flattensTipTap() {
+        val doc = JSONObject(
+            """
+            {"type":"doc","content":[
+              {"type":"paragraph","content":[{"type":"text","text":"An hour of "},{"type":"text","text":"music."}]},
+              {"type":"paragraph","content":[{"type":"text","text":"No talking."},{"type":"hardBreak"},{"type":"text","text":"Just songs."}]}
+            ]}
+            """,
+        )
+        assertEquals("An hour of music.\n\nNo talking.\nJust songs.", tipTapText(doc))
+        assertEquals(null, tipTapText(JSONObject("""{"type":"doc","content":[]}""")))
+        assertEquals(null, tipTapText(null))
+    }
 }

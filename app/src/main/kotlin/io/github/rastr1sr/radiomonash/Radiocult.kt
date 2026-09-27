@@ -21,3 +21,17 @@ fun airMode(live: JSONObject) = when {
     live.optJSONObject("content")?.optJSONObject("media")?.str("type") == "live" -> "live"
     else -> "playlist"
 }
+
+fun tipTapText(node: JSONObject?): String? {
+    fun walk(n: JSONObject): String {
+        val type = n.str("type")
+        if (type == "text") return n.optString("text")
+        if (type == "hardBreak") return "\n"
+        val children = n.optJSONArray("content") ?: return ""
+        val separator = if (type == "paragraph") "" else "\n\n"
+        return (0 until children.length()).joinToString(separator) {
+            walk(children.getJSONObject(it))
+        }
+    }
+    return node?.let(::walk)?.trim()?.ifEmpty { null }
+}

@@ -3,6 +3,7 @@ package io.github.rastr1sr.radiomonash
 import androidx.annotation.OptIn
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
+import androidx.core.os.bundleOf
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.ForwardingPlayer
@@ -70,6 +71,7 @@ class PlaybackService : MediaSessionService() {
             .setTitle(track?.str("title"))
             .setArtist(track?.str("artist"))
             .setArtworkUri(track?.optJSONObject("artwork")?.str("512x512")?.toUri())
+            .setExtras(bundleOf("mode" to airMode(result)))
             .build()
     } catch (e: IOException) {
         null

@@ -19,6 +19,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -191,12 +192,31 @@ private fun Radio() {
                             style = MaterialTheme.typography.bodyLarge,
                         )
                     }
-                    meta.station?.let {
-                        Text(
-                            it.toString(),
-                            color = MaterialTheme.colorScheme.primary,
-                            style = MaterialTheme.typography.labelLarge,
-                        )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        when (meta.extras?.getString("mode")) {
+                            "live" -> R.string.live to MaterialTheme.colorScheme.error
+
+                            "playlist" ->
+                                R.string.playlist to
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+
+                            "off" -> R.string.off_air to MaterialTheme.colorScheme.onSurfaceVariant
+
+                            else -> null
+                        }?.let { (label, color) ->
+                            Text(
+                                stringResource(label),
+                                color = color,
+                                style = MaterialTheme.typography.labelLarge,
+                            )
+                        }
+                        meta.station?.let {
+                            Text(
+                                it.toString(),
+                                color = MaterialTheme.colorScheme.primary,
+                                style = MaterialTheme.typography.labelLarge,
+                            )
+                        }
                     }
                     Spacer(Modifier.height(16.dp))
                     FilledIconButton(

@@ -5,6 +5,8 @@
   <string name="player">Player</string>
   <string name="schedule">Schedule</string>
   <string name="live">Live</string>
+  <string name="playlist">Playlist</string>
+  <string name="off_air">Off air</string>
   <string name="schedule_failed">Couldn\'t load the schedule</string>
   <string name="retry">Retry</string>
 </resources>

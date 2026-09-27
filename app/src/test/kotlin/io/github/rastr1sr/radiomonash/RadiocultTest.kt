@@ -31,4 +31,18 @@ class RadiocultTest {
         assertFalse(sameTrack("Stefan West - Hard Times", "Soft Times"))
         assertFalse(sameTrack("Stefan West - Hard Times", null))
     }
+
+    @Test
+    fun readsAirMode() {
+        val show = { status: String, type: String ->
+            JSONObject("""{"status":"$status","content":{"media":{"type":"$type"}}}""")
+        }
+        assertEquals("live", airMode(show("schedule", "live")))
+        assertEquals("playlist", airMode(show("schedule", "playlist")))
+        assertEquals(
+            "playlist",
+            airMode(JSONObject("""{"status":"defaultPlaylist","content":{}}""")),
+        )
+        assertEquals("off", airMode(JSONObject("""{"status":"offAir"}""")))
+    }
 }

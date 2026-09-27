@@ -15,3 +15,9 @@ fun radiocult(path: String): JSONObject {
 fun JSONObject.str(key: String) = optString(key).ifEmpty { null }
 
 fun sameTrack(icy: String, title: String?) = title != null && icy.contains(title, ignoreCase = true)
+
+fun airMode(live: JSONObject) = when {
+    live.str("status") == "offAir" -> "off"
+    live.optJSONObject("content")?.optJSONObject("media")?.str("type") == "live" -> "live"
+    else -> "playlist"
+}

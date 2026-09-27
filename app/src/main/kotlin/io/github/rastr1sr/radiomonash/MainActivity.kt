@@ -2,6 +2,7 @@ package io.github.rastr1sr.radiomonash
 
 import android.content.ComponentName
 import android.graphics.BitmapFactory
+import android.net.http.HttpResponseCache
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -65,6 +66,7 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.materialkolor.PaletteStyle
 import com.materialkolor.rememberDynamicColorScheme
+import java.io.File
 import java.io.IOException
 import java.net.URL
 import kotlinx.coroutines.Dispatchers
@@ -75,6 +77,7 @@ private val Seed = Color(0xFF0439D9)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        HttpResponseCache.install(File(cacheDir, "http"), 20L shl 20)
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         setContent {

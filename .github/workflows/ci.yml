@@ -15,4 +15,4 @@ jobs:
           distribution: temurin
           java-version: 21
       - uses: gradle/actions/setup-gradle@v6
-      - run: ./gradlew assembleDebug lintDebug
+      - run: ./gradlew assembleDebug lintDebug testDebugUnitTest

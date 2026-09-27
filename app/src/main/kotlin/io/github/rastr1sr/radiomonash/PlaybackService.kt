@@ -5,6 +5,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Metadata
@@ -23,6 +24,7 @@ import org.json.JSONObject
 class PlaybackService : MediaSessionService() {
     private lateinit var session: MediaSession
 
+    @OptIn(UnstableApi::class)
     override fun onCreate() {
         super.onCreate()
         val player = ExoPlayer.Builder(this)
@@ -32,7 +34,6 @@ class PlaybackService : MediaSessionService() {
             .build()
         player.setMediaItem(MediaItem.fromUri("https://radio-monash.radiocult.fm/stream"))
         player.addListener(object : Player.Listener {
-            @OptIn(UnstableApi::class)
             override fun onMetadata(metadata: Metadata) {
                 val icy = (0 until metadata.length())
                     .map(metadata::get)
@@ -47,7 +48,10 @@ class PlaybackService : MediaSessionService() {
                 }
             }
         })
-        session = MediaSession.Builder(this, player).build()
+        val live = object : ForwardingPlayer(player) {
+            override fun pause() = stop()
+        }
+        session = MediaSession.Builder(this, live).build()
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo) = session

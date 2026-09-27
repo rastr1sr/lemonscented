@@ -150,16 +150,7 @@ private fun Radio() {
             }
             Spacer(Modifier.height(16.dp))
             FilledIconButton(
-                onClick = {
-                    controller?.run {
-                        if (on) {
-                            stop()
-                        } else {
-                            prepare()
-                            play()
-                        }
-                    }
-                },
+                onClick = { controller?.run { if (on) pause() else play() } },
                 modifier = Modifier.size(72.dp),
                 enabled = controller != null,
             ) {

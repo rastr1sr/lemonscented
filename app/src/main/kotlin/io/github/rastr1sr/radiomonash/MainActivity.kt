@@ -51,6 +51,7 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
+import com.materialkolor.PaletteStyle
 import com.materialkolor.rememberDynamicColorScheme
 import java.io.IOException
 import java.net.URL
@@ -187,6 +188,7 @@ private fun LemonScentedTheme(content: @Composable () -> Unit) {
             seedColor = Seed,
             isDark = dark,
             isAmoled = dark,
+            style = PaletteStyle.Fidelity,
         )
     }
     MaterialTheme(colorScheme = colorScheme, content = content)

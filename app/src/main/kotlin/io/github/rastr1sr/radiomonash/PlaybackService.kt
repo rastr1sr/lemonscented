@@ -16,10 +16,8 @@ import androidx.media3.extractor.metadata.icy.IcyInfo
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import java.io.IOException
-import java.net.URL
 import kotlin.concurrent.thread
 import org.json.JSONException
-import org.json.JSONObject
 
 class PlaybackService : MediaSessionService() {
     private lateinit var session: MediaSession
@@ -63,16 +61,10 @@ class PlaybackService : MediaSessionService() {
     }
 
     private fun nowPlaying(icy: String): MediaMetadata? = try {
-        val url = URL("https://api.radiocult.fm/api/station/radio-monash/schedule/live")
-        val body = url.openConnection().run {
-            connectTimeout = 10_000
-            readTimeout = 10_000
-            getInputStream().bufferedReader().use { it.readText() }
-        }
-        val result = JSONObject(body).getJSONObject("result")
+        val result = radiocult("schedule/live").getJSONObject("result")
         val content = result.optJSONObject("content")
         val track = result.optJSONObject("metadata")
-            ?.takeIf { icy.contains(it.str("title") ?: return@takeIf false, ignoreCase = true) }
+            ?.takeIf { sameTrack(icy, it.str("title")) }
         MediaMetadata.Builder()
             .setStation(content?.run { str("title") ?: str("name") })
             .setTitle(track?.str("title"))
@@ -84,6 +76,4 @@ class PlaybackService : MediaSessionService() {
     } catch (e: JSONException) {
         null
     }
-
-    private fun JSONObject.str(key: String) = optString(key).ifEmpty { null }
 }

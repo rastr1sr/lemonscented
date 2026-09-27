@@ -193,20 +193,14 @@ private fun Radio() {
                         )
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        when (meta.extras?.getString("mode")) {
-                            "live" -> R.string.live to MaterialTheme.colorScheme.error
-
-                            "playlist" ->
-                                R.string.playlist to
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-
-                            "off" -> R.string.off_air to MaterialTheme.colorScheme.onSurfaceVariant
-
-                            else -> null
-                        }?.let { (label, color) ->
+                        meta.extras?.getString("mode")?.let(AirMode::valueOf)?.let {
                             Text(
-                                stringResource(label),
-                                color = color,
+                                stringResource(it.label),
+                                color = if (it == AirMode.Live) {
+                                    MaterialTheme.colorScheme.error
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
                                 style = MaterialTheme.typography.labelLarge,
                             )
                         }

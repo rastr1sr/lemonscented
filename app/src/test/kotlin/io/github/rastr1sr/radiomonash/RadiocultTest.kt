@@ -35,13 +35,13 @@ class RadiocultTest {
         val show = { status: String, type: String ->
             JSONObject("""{"status":"$status","content":{"media":{"type":"$type"}}}""")
         }
-        assertEquals("live", airMode(show("schedule", "live")))
-        assertEquals("playlist", airMode(show("schedule", "playlist")))
+        assertEquals(AirMode.Live, airMode(show("schedule", "live")))
+        assertEquals(AirMode.Playlist, airMode(show("schedule", "playlist")))
         assertEquals(
-            "playlist",
+            AirMode.Playlist,
             airMode(JSONObject("""{"status":"defaultPlaylist","content":{}}""")),
         )
-        assertEquals("off", airMode(JSONObject("""{"status":"offAir"}""")))
+        assertEquals(AirMode.Off, airMode(JSONObject("""{"status":"offAir"}""")))
     }
 
     @Test

@@ -82,7 +82,7 @@ class PlaybackService : MediaSessionService() {
             .setArtworkUri(
                 track?.optJSONObject("artwork")?.str("512x512")?.takeIf(::isHttps)?.toUri(),
             )
-            .setExtras(bundleOf("mode" to airMode(result)))
+            .setExtras(bundleOf("mode" to airMode(result).name))
             .build()
     } catch (e: IOException) {
         null

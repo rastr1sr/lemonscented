@@ -18,10 +18,16 @@ fun isHttps(url: String) = url.startsWith("https://")
 
 fun sameTrack(icy: String, title: String?) = title != null && icy.contains(title, ignoreCase = true)
 
+enum class AirMode(val label: Int) {
+    Live(R.string.live),
+    Playlist(R.string.playlist),
+    Off(R.string.off_air),
+}
+
 fun airMode(live: JSONObject) = when {
-    live.str("status") == "offAir" -> "off"
-    live.optJSONObject("content")?.optJSONObject("media")?.str("type") == "live" -> "live"
-    else -> "playlist"
+    live.str("status") == "offAir" -> AirMode.Off
+    live.optJSONObject("content")?.optJSONObject("media")?.str("type") == "live" -> AirMode.Live
+    else -> AirMode.Playlist
 }
 
 fun tipTapText(node: JSONObject?): String? {

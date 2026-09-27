@@ -38,15 +38,10 @@ class PlaybackService : MediaSessionService() {
                     .map(metadata::get)
                     .firstNotNullOfOrNull { (it as? IcyInfo)?.title }
                     ?: return
-                thread {
-                    val info = nowPlaying(icy) ?: return@thread
-                    ContextCompat.getMainExecutor(this@PlaybackService).execute {
-                        val item = player.getMediaItemAt(0)
-                        player.replaceMediaItem(0, item.buildUpon().setMediaMetadata(info).build())
-                    }
-                }
+                refresh(player, icy)
             }
         })
+        refresh(player, null)
         val live = object : ForwardingPlayer(player) {
             override fun pause() = stop()
         }
@@ -61,16 +56,26 @@ class PlaybackService : MediaSessionService() {
         super.onDestroy()
     }
 
-    private fun nowPlaying(icy: String): MediaMetadata? = try {
+    private fun refresh(player: Player, icy: String?) = thread {
+        val info = nowPlaying(icy) ?: return@thread
+        ContextCompat.getMainExecutor(this).execute {
+            val item = player.getMediaItemAt(0)
+            player.replaceMediaItem(0, item.buildUpon().setMediaMetadata(info).build())
+        }
+    }
+
+    private fun nowPlaying(icy: String?): MediaMetadata? = try {
         val result = radiocult("schedule/live").getJSONObject("result")
         val content = result.optJSONObject("content")
         val track = result.optJSONObject("metadata")
-            ?.takeIf { sameTrack(icy, it.str("title")) }
+            ?.takeIf { icy == null || sameTrack(icy, it.str("title")) }
         MediaMetadata.Builder()
             .setStation(content?.run { str("title") ?: str("name") })
             .setTitle(track?.str("title"))
             .setArtist(track?.str("artist"))
-            .setArtworkUri(track?.optJSONObject("artwork")?.str("512x512")?.toUri())
+            .setArtworkUri(
+                track?.optJSONObject("artwork")?.str("512x512")?.toUri(),
+            )
             .setExtras(bundleOf("mode" to airMode(result)))
             .build()
     } catch (e: IOException) {

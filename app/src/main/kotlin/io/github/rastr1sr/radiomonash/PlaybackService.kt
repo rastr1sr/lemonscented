@@ -23,6 +23,7 @@ import org.json.JSONObject
 
 class PlaybackService : MediaSessionService() {
     private lateinit var session: MediaSession
+    private var request = 0
 
     @OptIn(UnstableApi::class)
     override fun onCreate() {
@@ -57,11 +58,15 @@ class PlaybackService : MediaSessionService() {
         super.onDestroy()
     }
 
-    private fun refresh(player: Player, icy: String?) = thread {
-        val info = nowPlaying(icy) ?: return@thread
-        ContextCompat.getMainExecutor(this).execute {
-            val item = player.getMediaItemAt(0)
-            player.replaceMediaItem(0, item.buildUpon().setMediaMetadata(info).build())
+    private fun refresh(player: Player, icy: String?) {
+        val id = ++request
+        thread {
+            val info = nowPlaying(icy) ?: return@thread
+            ContextCompat.getMainExecutor(this).execute {
+                if (id != request) return@execute
+                val item = player.getMediaItemAt(0)
+                player.replaceMediaItem(0, item.buildUpon().setMediaMetadata(info).build())
+            }
         }
     }
 

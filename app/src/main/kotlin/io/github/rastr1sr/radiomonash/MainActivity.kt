@@ -177,9 +177,17 @@ private fun LemonScentedTheme(content: @Composable () -> Unit) {
     val dark = isSystemInDarkTheme()
     val colorScheme = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
         val context = LocalContext.current
-        if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+        if (dark) {
+            dynamicDarkColorScheme(context).copy(background = Color.Black, surface = Color.Black)
+        } else {
+            dynamicLightColorScheme(context)
+        }
     } else {
-        rememberDynamicColorScheme(seedColor = Seed, isDark = dark)
+        rememberDynamicColorScheme(
+            seedColor = Seed,
+            isDark = dark,
+            isAmoled = dark,
+        )
     }
     MaterialTheme(colorScheme = colorScheme, content = content)
 }

@@ -19,6 +19,7 @@ import androidx.media3.session.MediaSessionService
 import java.io.IOException
 import kotlin.concurrent.thread
 import org.json.JSONException
+import org.json.JSONObject
 
 class PlaybackService : MediaSessionService() {
     private lateinit var session: MediaSession
@@ -65,7 +66,7 @@ class PlaybackService : MediaSessionService() {
     }
 
     private fun nowPlaying(icy: String?): MediaMetadata? = try {
-        val result = radiocult("schedule/live").getJSONObject("result")
+        val result = JSONObject(radiocult("schedule/live")).getJSONObject("result")
         val content = result.optJSONObject("content")
         val track = result.optJSONObject("metadata")
             ?.takeIf { icy == null || sameTrack(icy, it.str("title")) }

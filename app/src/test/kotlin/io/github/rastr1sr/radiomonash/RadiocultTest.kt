@@ -10,15 +10,13 @@ import org.junit.Test
 class RadiocultTest {
     @Test
     fun parsesAndSortsSchedule() {
-        val json = JSONObject(
-            """
+        val json = """
             {"schedules":[
               {"id":"b","title":"Later","start":"2026-09-28T03:00:00.000Z","end":"2026-09-28T04:00:00.000Z","media":{"type":"live"}},
               {"id":"a","title":"Earlier","start":"2026-09-28T01:00:00.000Z","end":"2026-09-28T03:00:00.000Z","media":{"type":"playlist"}}
             ]}
-            """,
-        )
-        val shows = parseSchedule(json)
+        """
+        val shows = parseSchedule(json)!!
         assertEquals(listOf("Earlier", "Later"), shows.map { it.title })
         assertEquals(Instant.parse("2026-09-28T01:00:00Z"), shows[0].start)
         assertFalse(shows[0].live)
@@ -59,5 +57,12 @@ class RadiocultTest {
         assertEquals("An hour of music.\n\nNo talking.\nJust songs.", tipTapText(doc))
         assertEquals(null, tipTapText(JSONObject("""{"type":"doc","content":[]}""")))
         assertEquals(null, tipTapText(null))
+    }
+
+    @Test
+    fun rejectsBadSchedule() {
+        val badDate = """{"schedules":[{"id":"a","title":"x","start":"soon","end":"later"}]}"""
+        assertEquals(null, parseSchedule(badDate))
+        assertEquals(null, parseSchedule("not json"))
     }
 }

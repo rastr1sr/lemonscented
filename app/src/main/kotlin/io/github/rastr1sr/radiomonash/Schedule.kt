@@ -24,11 +24,13 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -36,12 +38,15 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import java.io.File
 import java.io.IOException
+import java.net.URLEncoder
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.time.format.DateTimeParseException
 import java.time.temporal.ChronoUnit
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.json.JSONException
 import org.json.JSONObject
@@ -61,26 +66,22 @@ private var cachedAt = Instant.EPOCH
 private fun schedule(zone: ZoneId, saved: File): List<Show>? = try {
     val from = LocalDate.now(zone).atStartOfDay(zone).toInstant()
     val to = from.plus(7, ChronoUnit.DAYS)
-    val json = radiocult("schedule?startDate=$from&endDate=$to&timezone=${zone.id}")
-    saved.writeText(json.toString())
-    parseSchedule(json)
+    val tz = URLEncoder.encode(zone.id, "UTF-8")
+    val text = radiocult("schedule?startDate=$from&endDate=$to&timezone=$tz")
+    parseSchedule(text)?.also { saved.writeText(text) }
 } catch (e: IOException) {
-    null
-} catch (e: JSONException) {
     null
 }
 
 private fun saved(file: File): List<Show>? = try {
-    parseSchedule(JSONObject(file.readText()))
+    parseSchedule(file.readText())
 } catch (e: IOException) {
-    null
-} catch (e: JSONException) {
     null
 }
 
-internal fun parseSchedule(json: JSONObject): List<Show> {
-    val list = json.getJSONArray("schedules")
-    return (0 until list.length()).map(list::getJSONObject).map {
+internal fun parseSchedule(text: String): List<Show>? = try {
+    val list = JSONObject(text).getJSONArray("schedules")
+    (0 until list.length()).map(list::getJSONObject).map {
         Show(
             it.getString("id"),
             it.getString("title"),
@@ -90,6 +91,10 @@ internal fun parseSchedule(json: JSONObject): List<Show> {
             tipTapText(it.optJSONObject("description")),
         )
     }.sortedBy { it.start }
+} catch (e: JSONException) {
+    null
+} catch (e: DateTimeParseException) {
+    null
 }
 
 @Composable
@@ -99,7 +104,13 @@ fun Schedule(modifier: Modifier = Modifier) {
     var shows by remember { mutableStateOf(cache) }
     var failed by remember { mutableStateOf(false) }
     val file = File(LocalContext.current.filesDir, "schedule.json")
-    LaunchedEffect(attempt) {
+    val now by produceState(Instant.now()) {
+        while (true) {
+            delay(60_000)
+            value = Instant.now()
+        }
+    }
+    LaunchedEffect(attempt, now) {
         if (shows == null) shows = withContext(Dispatchers.IO) { saved(file) }
         if (shows != null && Instant.now() < cachedAt.plusSeconds(600)) return@LaunchedEffect
         failed = false
@@ -111,11 +122,14 @@ fun Schedule(modifier: Modifier = Modifier) {
         }
         failed = shows == null
     }
-    val now = Instant.now()
-    val day = DateTimeFormatter.ofPattern("EEEE d MMMM")
-    val time = DateTimeFormatter.ofPattern(
-        if (DateFormat.is24HourFormat(LocalContext.current)) "HH:mm" else "hh:mm a",
-    )
+    val locale = LocalConfiguration.current.locales[0]
+    val day = DateTimeFormatter.ofPattern(DateFormat.getBestDateTimePattern(locale, "EEEEdMMMM"))
+    val clock = if (DateFormat.is24HourFormat(LocalContext.current)) "HHmm" else "hhmma"
+    val hours = DateFormat.getBestDateTimePattern(
+        locale,
+        clock,
+    ).replace(Regex("\\b([hH])\\b"), "$1$1")
+    val time = DateTimeFormatter.ofPattern(hours)
     if (failed) {
         Column(
             modifier.fillMaxSize(),
@@ -143,12 +157,14 @@ fun Schedule(modifier: Modifier = Modifier) {
     val timeStyle = MaterialTheme.typography.bodyMedium
     val liveStyle = MaterialTheme.typography.labelSmall
     val live = stringResource(R.string.live)
+    val describe = stringResource(R.string.show_description)
     val density = LocalDensity.current
-    val timeWidth = with(density) {
-        loaded.maxOfOrNull {
-            measurer.measure(it.start.atZone(zone).format(time), timeStyle).size.width
+    val timeWidth = remember(loaded, time, timeStyle) {
+        with(density) {
+            loaded.maxOfOrNull {
+                measurer.measure(it.start.atZone(zone).format(time), timeStyle).size.width
+            }?.toDp() ?: 0.dp
         }
-            ?.toDp() ?: 0.dp
     }
     val liveWidth = with(density) { measurer.measure(live, liveStyle).size.width.toDp() }
     var open by remember { mutableStateOf<String?>(null) }
@@ -168,7 +184,10 @@ fun Schedule(modifier: Modifier = Modifier) {
                 val onNow = now >= show.start && now < show.end
                 ListItem(
                     headlineContent = { Text(show.title, Modifier.basicMarquee(), maxLines = 1) },
-                    modifier = Modifier.clickable(enabled = show.description != null) {
+                    modifier = Modifier.clickable(
+                        enabled = show.description != null,
+                        onClickLabel = describe,
+                    ) {
                         open = if (open == show.id) null else show.id
                     },
                     supportingContent = show.description?.takeIf {

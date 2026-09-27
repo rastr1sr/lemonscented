@@ -75,7 +75,7 @@ class PlaybackService : MediaSessionService() {
             .setTitle(track?.str("title"))
             .setArtist(track?.str("artist"))
             .setArtworkUri(
-                track?.optJSONObject("artwork")?.str("512x512")?.toUri(),
+                track?.optJSONObject("artwork")?.str("512x512")?.takeIf(::isHttps)?.toUri(),
             )
             .setExtras(bundleOf("mode" to airMode(result)))
             .build()

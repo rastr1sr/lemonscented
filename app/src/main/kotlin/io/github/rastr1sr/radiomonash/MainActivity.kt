@@ -117,11 +117,11 @@ private fun Radio() {
     var artLoading by remember { mutableStateOf(false) }
     LaunchedEffect(meta.artworkUri) {
         art = null
-        val uri = meta.artworkUri ?: return@LaunchedEffect
+        val uri = meta.artworkUri?.toString()?.takeIf(::isHttps) ?: return@LaunchedEffect
         artLoading = true
         art = withContext(Dispatchers.IO) {
             try {
-                URL(uri.toString()).openStream().use(BitmapFactory::decodeStream)?.asImageBitmap()
+                URL(uri).openStream().use(BitmapFactory::decodeStream)?.asImageBitmap()
             } catch (e: IOException) {
                 null
             }
@@ -153,7 +153,7 @@ private fun Radio() {
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     val cover = Modifier
-                        .fillMaxWidth()
+                        .weight(1f, fill = false)
                         .aspectRatio(1f)
                         .clip(MaterialTheme.shapes.extraLarge)
                     val bitmap = art

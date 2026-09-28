@@ -16,11 +16,13 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -74,16 +76,19 @@ private fun history(): List<Played>? = try {
     null
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun History(modifier: Modifier = Modifier) {
     var attempt by remember { mutableIntStateOf(0) }
     var played by remember { mutableStateOf<List<Played>?>(null) }
     var failed by remember { mutableStateOf(false) }
+    var refreshing by remember { mutableStateOf(false) }
     LaunchedEffect(attempt) {
         while (true) {
             val fresh = withContext(Dispatchers.IO) { history() }
             if (fresh != null) played = fresh
             failed = played == null
+            refreshing = false
             delay(60_000)
         }
     }
@@ -94,17 +99,26 @@ fun History(modifier: Modifier = Modifier) {
         return
     }
     val songs = played ?: return SkeletonRows(DpSize(48.dp, 48.dp), modifier)
-    LazyColumn(modifier.fillMaxSize().wrapContentWidth().widthIn(max = 600.dp)) {
-        items(songs, key = { it.at.toString() + it.title }) { song ->
-            ListItem(
-                headlineContent = { Text(song.title, Modifier.basicMarquee(), maxLines = 1) },
-                supportingContent = song.artist?.let { { Text(it, maxLines = 1) } },
-                leadingContent = {
-                    Cover(song.art, Modifier.size(48.dp).clip(MaterialTheme.shapes.small))
-                },
-                trailingContent = { Text(song.at.atZone(zone).format(time)) },
-                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-            )
+    PullToRefreshBox(
+        isRefreshing = refreshing,
+        onRefresh = {
+            refreshing = true
+            attempt++
+        },
+        modifier = modifier,
+    ) {
+        LazyColumn(Modifier.fillMaxSize().wrapContentWidth().widthIn(max = 600.dp)) {
+            items(songs, key = { it.at.toString() + it.title }) { song ->
+                ListItem(
+                    headlineContent = { Text(song.title, Modifier.basicMarquee(), maxLines = 1) },
+                    supportingContent = song.artist?.let { { Text(it, maxLines = 1) } },
+                    leadingContent = {
+                        Cover(song.art, Modifier.size(48.dp).clip(MaterialTheme.shapes.small))
+                    },
+                    trailingContent = { Text(song.at.atZone(zone).format(time)) },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                )
+            }
         }
     }
 }

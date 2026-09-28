@@ -221,7 +221,7 @@ fun Schedule(modifier: Modifier = Modifier) {
                         headlineContent = {
                             Text(
                                 show.title,
-                                Modifier.basicMarquee(),
+                                Modifier.basicMarquee(iterations = Int.MAX_VALUE),
                                 maxLines = 1,
                             )
                         },

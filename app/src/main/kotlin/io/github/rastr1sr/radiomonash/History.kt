@@ -110,7 +110,13 @@ fun History(modifier: Modifier = Modifier) {
         LazyColumn(Modifier.fillMaxSize().wrapContentWidth().widthIn(max = 600.dp)) {
             items(songs, key = { it.at.toString() + it.title }) { song ->
                 ListItem(
-                    headlineContent = { Text(song.title, Modifier.basicMarquee(), maxLines = 1) },
+                    headlineContent = {
+                        Text(
+                            song.title,
+                            Modifier.basicMarquee(iterations = Int.MAX_VALUE),
+                            maxLines = 1,
+                        )
+                    },
                     supportingContent = song.artist?.let { { Text(it, maxLines = 1) } },
                     leadingContent = {
                         Cover(song.art, Modifier.size(48.dp).clip(MaterialTheme.shapes.small))

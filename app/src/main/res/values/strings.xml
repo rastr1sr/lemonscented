@@ -44,6 +44,14 @@
     <item quantity="one">%d day streak</item>
     <item quantity="other">%d day streak</item>
   </plurals>
+  <string name="sleep_timer">Sleep timer</string>
+  <string name="stops_at">Stops at %s</string>
+  <string name="end_of_show">End of this show</string>
+  <string name="turn_off">Turn off</string>
+  <plurals name="minutes_count">
+    <item quantity="one">%d minute</item>
+    <item quantity="other">%d minutes</item>
+  </plurals>
   <string name="follow">Follow</string>
   <string name="following">Following</string>
   <string name="unfollow">Unfollow</string>

@@ -3,7 +3,6 @@ package io.github.rastr1sr.radiomonash
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,37 +15,30 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -54,9 +46,8 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.MediaMetadata
-import kotlin.math.cos
-import kotlin.math.sin
-import kotlin.random.Random
+import java.time.Instant
+import java.time.ZoneId
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -75,17 +66,14 @@ fun PlayerPage(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         val mode = meta.extras?.getString("mode")?.let(AirMode::valueOf)
-        val show = mode == AirMode.Live && meta.artist == null
+        val show = meta.isShow
         val cover = Modifier
             .weight(1f, fill = false)
             .aspectRatio(1f)
             .clip(MaterialTheme.shapes.extraLarge)
-        when {
-            failed -> Cover(null, cover) { Question() }
-            show || meta.title == null -> Lemon(show, cover)
-            else -> Cover(meta.artworkUri?.toString(), cover) { Question() }
-        }
+        Artwork(meta, cover, failed)
         Spacer(Modifier.height(16.dp))
+        val artist = meta.artist?.toString()
         Text(
             meta.title?.toString() ?: stringResource(R.string.app_name),
             Modifier.basicMarquee(iterations = Int.MAX_VALUE),
@@ -93,7 +81,6 @@ fun PlayerPage(
             style = MaterialTheme.typography.titleLarge,
             textAlign = TextAlign.Center,
         )
-        val artist = meta.artist?.toString()
         val station = meta.station?.toString()
         Line(MaterialTheme.typography.bodyLarge) {
             if (artist != null) {
@@ -133,7 +120,8 @@ fun PlayerPage(
         }
         Spacer(Modifier.height(16.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Spacer(Modifier.width(56.dp))
+            SleepButton()
+            Spacer(Modifier.width(8.dp))
             FilledIconButton(
                 onClick = onToggle,
                 modifier = Modifier.size(72.dp),
@@ -166,10 +154,83 @@ fun PlayerPage(
     }
 }
 
+@Composable
+private fun SleepButton() {
+    var picking by remember { mutableStateOf(false) }
+    val on = Sleep.until > 0
+    val label = stringResource(R.string.sleep_timer)
+    val colors = if (on) {
+        IconButtonDefaults.filledTonalIconButtonColors()
+    } else {
+        IconButtonDefaults.iconButtonColors()
+    }
+    IconButton({
+        picking = true
+    }, colors = colors) { Icon(painterResource(R.drawable.ic_timer), label) }
+    if (!picking) return
+    val time = timeFormat()
+    val end = currentShow()?.end
+    AlertDialog(
+        onDismissRequest = { picking = false },
+        title = { Text(label) },
+        text = {
+            Column {
+                if (on) {
+                    val at = Instant.ofEpochMilli(Sleep.until).atZone(ZoneId.systemDefault())
+                    Text(
+                        stringResource(R.string.stops_at, at.format(time)),
+                        Modifier.padding(bottom = 8.dp),
+                    )
+                }
+                listOf(15, 30, 45, 60, 90).forEach { minutes ->
+                    TextButton({
+                        Sleep.set(minutes * 60_000L)
+                        picking = false
+                    }) { Text(pluralStringResource(R.plurals.minutes_count, minutes, minutes)) }
+                }
+                if (end != null) {
+                    TextButton({
+                        Sleep.set(end.toEpochMilli() - System.currentTimeMillis())
+                        picking = false
+                    }) { Text(stringResource(R.string.end_of_show)) }
+                }
+            }
+        },
+        confirmButton = {
+            if (on) {
+                TextButton({
+                    Sleep.set(0)
+                    picking = false
+                }) { Text(stringResource(R.string.turn_off)) }
+            }
+        },
+        dismissButton = {
+            TextButton({ picking = false }) { Text(stringResource(R.string.not_now)) }
+        },
+    )
+}
+
 internal fun heart(saved: Boolean) = if (saved) R.drawable.ic_heart_on else R.drawable.ic_heart_off
 
 internal fun heartLabel(saved: Boolean) =
     if (saved) R.string.in_favourites else R.string.add_favourite
+
+internal val MediaMetadata.isShow
+    get() = extras?.getString("mode") == AirMode.Live.name && artist == null
+
+@Composable
+internal fun Artwork(
+    meta: MediaMetadata,
+    modifier: Modifier = Modifier,
+    failed: Boolean = false,
+    still: Boolean = false,
+) {
+    when {
+        failed -> Cover(null, modifier) { Question() }
+        meta.isShow || meta.title == null -> Lemon(meta.isShow, modifier, still)
+        else -> Cover(meta.artworkUri?.toString(), modifier) { Question() }
+    }
+}
 
 @Composable
 internal fun Question() {

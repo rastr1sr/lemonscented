@@ -1,8 +1,13 @@
 package io.github.rastr1sr.radiomonash
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import androidx.annotation.OptIn
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import androidx.core.os.bundleOf
@@ -26,6 +31,23 @@ import java.io.IOException
 import kotlin.concurrent.thread
 import org.json.JSONException
 import org.json.JSONObject
+
+internal object Sleep {
+    var until by mutableLongStateOf(0L)
+        private set
+    var stop: (() -> Unit)? = null
+    private val handler = Handler(Looper.getMainLooper())
+    private val fire = Runnable {
+        until = 0
+        stop?.invoke()
+    }
+
+    fun set(ms: Long) {
+        handler.removeCallbacks(fire)
+        until = if (ms > 0) System.currentTimeMillis() + ms else 0
+        if (ms > 0) handler.postDelayed(fire, ms)
+    }
+}
 
 class PlaybackService : MediaSessionService() {
     private lateinit var session: MediaSession
@@ -68,11 +90,14 @@ class PlaybackService : MediaSessionService() {
             override fun pause() = stop()
         }
         session = MediaSession.Builder(this, live).build()
+        Sleep.stop = live::stop
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo) = session
 
     override fun onDestroy() {
+        Sleep.stop = null
+        Sleep.set(0)
         flush()
         session.player.release()
         session.release()

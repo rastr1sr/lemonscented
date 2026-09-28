@@ -43,6 +43,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import java.io.File
 import java.io.IOException
@@ -137,38 +138,12 @@ fun Schedule(modifier: Modifier = Modifier) {
     }
     val locale = LocalConfiguration.current.locales[0]
     val day = DateTimeFormatter.ofPattern(DateFormat.getBestDateTimePattern(locale, "EEEEdMMMM"))
-    val clock = if (DateFormat.is24HourFormat(LocalContext.current)) "HHmm" else "hhmma"
-    val hours = DateFormat.getBestDateTimePattern(
-        locale,
-        clock,
-    ).replace(Regex("\\b([hH])\\b"), "$1$1")
-    val time = DateTimeFormatter.ofPattern(hours)
-    val loadingLabel = stringResource(R.string.loading)
+    val time = timeFormat()
     if (failed) {
-        Column(
-            modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text(stringResource(R.string.schedule_failed))
-            TextButton(onClick = { attempt++ }) { Text(stringResource(R.string.retry)) }
-        }
+        Failed(stringResource(R.string.schedule_failed), { attempt++ }, modifier)
         return
     }
-    val loaded = shows ?: return Column(
-        modifier
-            .padding(horizontal = 24.dp, vertical = 20.dp)
-            .clearAndSetSemantics { contentDescription = loadingLabel },
-        verticalArrangement = Arrangement.spacedBy(28.dp),
-    ) {
-        Skeleton(Modifier.size(120.dp, 14.dp))
-        repeat(8) {
-            Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                Skeleton(Modifier.size(56.dp, 16.dp))
-                Skeleton(Modifier.height(16.dp).fillMaxWidth(0.5f + it % 3 * 0.15f))
-            }
-        }
-    }
+    val loaded = shows ?: return SkeletonRows(DpSize(56.dp, 16.dp), modifier)
     val measurer = rememberTextMeasurer()
     val timeStyle = MaterialTheme.typography.bodyMedium
     val liveStyle = MaterialTheme.typography.labelSmall
@@ -250,4 +225,15 @@ fun Schedule(modifier: Modifier = Modifier) {
             }
         }
     }
+}
+
+@Composable
+internal fun timeFormat(): DateTimeFormatter {
+    val locale = LocalConfiguration.current.locales[0]
+    val clock = if (DateFormat.is24HourFormat(LocalContext.current)) "HHmm" else "hhmma"
+    val hours = DateFormat.getBestDateTimePattern(
+        locale,
+        clock,
+    ).replace(Regex("\\b([hH])\\b"), "$1$1")
+    return DateTimeFormatter.ofPattern(hours)
 }

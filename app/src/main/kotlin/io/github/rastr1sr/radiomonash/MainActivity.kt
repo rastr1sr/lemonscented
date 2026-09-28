@@ -38,6 +38,7 @@ import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
@@ -58,7 +59,10 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaMetadata
@@ -120,7 +124,10 @@ private fun Radio() {
     Scaffold(
         topBar = {
             PrimaryTabRow(pager.currentPage, Modifier.statusBarsPadding()) {
-                listOf(R.string.player, R.string.schedule).forEachIndexed { i, label ->
+                listOf(R.string.player, R.string.schedule).forEachIndexed {
+                        i,
+                        label,
+                    ->
                     Tab(
                         selected = pager.currentPage == i,
                         onClick = { scope.launch { pager.animateScrollToPage(i) } },
@@ -141,6 +148,36 @@ private fun Radio() {
                     enabled = controller != null,
                     onToggle = { controller?.run { if (on) pause() else play() } },
                 )
+            }
+        }
+    }
+}
+
+@Composable
+fun Failed(text: String, onRetry: () -> Unit, modifier: Modifier = Modifier) {
+    Column(
+        modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(text)
+        TextButton(onClick = onRetry) { Text(stringResource(R.string.retry)) }
+    }
+}
+
+@Composable
+fun SkeletonRows(lead: DpSize, modifier: Modifier = Modifier) {
+    val loading = stringResource(R.string.loading)
+    Column(
+        modifier
+            .padding(horizontal = 24.dp, vertical = 20.dp)
+            .clearAndSetSemantics { contentDescription = loading },
+        verticalArrangement = Arrangement.spacedBy(24.dp),
+    ) {
+        repeat(8) {
+            Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                Skeleton(Modifier.size(lead))
+                Skeleton(Modifier.height(16.dp).fillMaxWidth(0.5f + it % 3 * 0.15f))
             }
         }
     }

@@ -1,5 +1,9 @@
 package io.github.rastr1sr.radiomonash
 
+import android.graphics.BitmapFactory
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import java.io.IOException
 import java.net.URL
 import org.json.JSONObject
 
@@ -15,6 +19,12 @@ fun radiocult(path: String): String {
 fun JSONObject.str(key: String) = optString(key).ifEmpty { null }
 
 fun isHttps(url: String) = url.startsWith("https://")
+
+fun bitmap(url: String): ImageBitmap? = try {
+    URL(url).openStream().use(BitmapFactory::decodeStream)?.asImageBitmap()
+} catch (e: IOException) {
+    null
+}
 
 fun sameTrack(icy: String, title: String?) = title != null && icy.contains(title, ignoreCase = true)
 

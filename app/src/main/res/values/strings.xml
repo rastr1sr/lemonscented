@@ -44,4 +44,9 @@
     <item quantity="one">%d day streak</item>
     <item quantity="other">%d day streak</item>
   </plurals>
+  <string name="follow">Follow</string>
+  <string name="following">Following</string>
+  <string name="unfollow">Unfollow</string>
+  <string name="follow_question">Get a reminder every time this show airs?</string>
+  <string name="unfollow_question">Stop reminders for this show?</string>
 </resources>

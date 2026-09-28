@@ -79,8 +79,13 @@ internal class Show(
     val description: String?,
 )
 
-private var cache: List<Show>? = null
+private var cache by mutableStateOf<List<Show>?>(null)
 private var cachedAt = Instant.EPOCH
+
+internal fun currentShow(): Show? {
+    val now = Instant.now()
+    return cache?.firstOrNull { now >= it.start && now < it.end }
+}
 
 private fun schedule(zone: ZoneId, saved: File): List<Show>? = try {
     val from = LocalDate.now(zone).atStartOfDay(zone).toInstant()
@@ -132,6 +137,8 @@ fun Schedule(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     var reminded by remember { mutableStateOf(reminders(context)) }
     var asking by remember { mutableStateOf<Show?>(null) }
+    var followed by remember { mutableStateOf(follows(context)) }
+    var following by remember { mutableStateOf<Show?>(null) }
     val permission =
         rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
     val file = File(LocalContext.current.filesDir, "schedule.json")
@@ -153,6 +160,8 @@ fun Schedule(modifier: Modifier = Modifier) {
             cache = fresh
             cachedAt = Instant.now()
             shows = fresh
+            remindFollowed(context, fresh)
+            reminded = reminders(context)
         }
         failed = shows == null
         refreshing = false
@@ -226,12 +235,12 @@ fun Schedule(modifier: Modifier = Modifier) {
                             )
                         },
                         modifier = Modifier.clickable(
-                            enabled = show.description != null || later,
+                            enabled = true,
                             onClickLabel = describe,
                         ) {
                             open = if (isOpen) null else show.id
                         },
-                        supportingContent = if (show.description == null && !(isOpen && later)) {
+                        supportingContent = if (show.description == null && !isOpen) {
                             null
                         } else {
                             {
@@ -243,11 +252,32 @@ fun Schedule(modifier: Modifier = Modifier) {
                                             overflow = TextOverflow.Ellipsis,
                                         )
                                     }
-                                    if (isOpen && later) {
-                                        TextButton(onClick = { asking = show }) {
-                                            Icon(painterResource(bell), null, Modifier.size(18.dp))
-                                            Spacer(Modifier.width(8.dp))
-                                            Text(stringResource(label))
+                                    if (isOpen) {
+                                        Row {
+                                            if (later) {
+                                                TextButton(onClick = { asking = show }) {
+                                                    Icon(
+                                                        painterResource(bell),
+                                                        null,
+                                                        Modifier.size(18.dp),
+                                                    )
+                                                    Spacer(Modifier.width(8.dp))
+                                                    Text(stringResource(label))
+                                                }
+                                            }
+                                            TextButton(onClick = { following = show }) {
+                                                Text(
+                                                    stringResource(
+                                                        if (show.title in
+                                                            followed
+                                                        ) {
+                                                            R.string.following
+                                                        } else {
+                                                            R.string.follow
+                                                        },
+                                                    ),
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -292,6 +322,40 @@ fun Schedule(modifier: Modifier = Modifier) {
                 }
             }
         }
+    }
+    following?.let { show ->
+        val isFollowed = show.title in followed
+        AlertDialog(
+            onDismissRequest = { following = null },
+            title = { Text(show.title) },
+            text = {
+                Text(
+                    stringResource(
+                        if (isFollowed) R.string.unfollow_question else R.string.follow_question,
+                    ),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    following = null
+                    if (isFollowed) {
+                        unfollow(context, show.title, loaded)
+                    } else {
+                        follow(context, show.title, loaded)
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            permission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                    }
+                    followed = follows(context)
+                    reminded = reminders(context)
+                }) { Text(stringResource(if (isFollowed) R.string.unfollow else R.string.follow)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { following = null }) {
+                    Text(stringResource(if (isFollowed) R.string.keep else R.string.not_now))
+                }
+            },
+        )
     }
     asking?.let { show ->
         val hasReminder = show.id in reminded

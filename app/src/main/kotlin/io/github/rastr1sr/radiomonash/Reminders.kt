@@ -20,6 +20,29 @@ internal fun decodeReminder(value: String): Pair<Long, String>? {
 
 fun reminders(context: Context): Set<String> = prefs(context).all.keys
 
+private fun followPrefs(context: Context) =
+    context.getSharedPreferences("follows", Context.MODE_PRIVATE)
+
+fun follows(context: Context): Set<String> = followPrefs(context).all.keys
+
+internal fun follow(context: Context, title: String, shows: List<Show>) {
+    followPrefs(context).edit { putBoolean(title, true) }
+    remindFollowed(context, shows)
+}
+
+internal fun unfollow(context: Context, title: String, shows: List<Show>) {
+    followPrefs(context).edit { remove(title) }
+    shows.filter { it.title == title }.forEach { forget(context, it.id) }
+}
+
+internal fun remindFollowed(context: Context, shows: List<Show>) {
+    val titles = follows(context)
+    val set = reminders(context)
+    val now = System.currentTimeMillis()
+    shows.filter { it.title in titles && it.id !in set && it.start.toEpochMilli() > now }
+        .forEach { remind(context, it.id, it.start.toEpochMilli(), it.title) }
+}
+
 fun remind(context: Context, id: String, start: Long, title: String) {
     prefs(context).edit { putString(id, "$start|$title") }
     arm(context, id, start, title)

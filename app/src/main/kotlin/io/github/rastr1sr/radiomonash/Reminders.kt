@@ -36,10 +36,9 @@ private fun arm(context: Context, id: String, start: Long, title: String) {
 }
 
 private fun alarm(context: Context, id: String, title: String): PendingIntent {
-    val intent = Intent(
-        context,
-        ReminderReceiver::class.java,
-    ).putExtra("id", id).putExtra("title", title)
+    val intent = Intent(context, ReminderReceiver::class.java)
+        .putExtra("id", id)
+        .putExtra("title", title)
     val flags = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
     return PendingIntent.getBroadcast(context, id.hashCode(), intent, flags)
 }
@@ -49,13 +48,8 @@ class ReminderReceiver : BroadcastReceiver() {
         if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
             prefs(context).all.forEach { (id, value) ->
                 val (start, title) = decodeReminder(value.toString()) ?: return@forEach
-                if (start >
-                    System.currentTimeMillis()
-                ) {
-                    arm(context, id, start, title)
-                } else {
-                    forget(context, id)
-                }
+                val now = System.currentTimeMillis()
+                if (start > now) arm(context, id, start, title) else forget(context, id)
             }
             return
         }

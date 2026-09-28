@@ -119,12 +119,12 @@ private fun Radio() {
         }, ContextCompat.getMainExecutor(context))
         onDispose { MediaController.releaseFuture(future) }
     }
-    val pager = rememberPagerState { 2 }
+    val pager = rememberPagerState { 3 }
     val scope = rememberCoroutineScope()
     Scaffold(
         topBar = {
             PrimaryTabRow(pager.currentPage, Modifier.statusBarsPadding()) {
-                listOf(R.string.player, R.string.schedule).forEachIndexed {
+                listOf(R.string.player, R.string.schedule, R.string.recent).forEachIndexed {
                         i,
                         label,
                     ->
@@ -137,9 +137,11 @@ private fun Radio() {
             }
         },
     ) { padding ->
-        HorizontalPager(pager, Modifier.padding(padding), beyondViewportPageCount = 1) { page ->
+        HorizontalPager(pager, Modifier.padding(padding), beyondViewportPageCount = 2) { page ->
             if (page == 1) {
                 Schedule()
+            } else if (page == 2) {
+                History()
             } else {
                 PlayerPage(
                     meta,

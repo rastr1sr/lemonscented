@@ -3,20 +3,24 @@ package io.github.rastr1sr.radiomonash
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
@@ -37,6 +41,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -83,6 +89,8 @@ fun History(modifier: Modifier = Modifier) {
     var played by remember { mutableStateOf<List<Played>?>(null) }
     var failed by remember { mutableStateOf(false) }
     var refreshing by remember { mutableStateOf(false) }
+    var open by remember { mutableStateOf<Instant?>(null) }
+    val context = LocalContext.current
     LaunchedEffect(attempt) {
         while (true) {
             val fresh = withContext(Dispatchers.IO) { history() }
@@ -108,7 +116,8 @@ fun History(modifier: Modifier = Modifier) {
         modifier = modifier,
     ) {
         LazyColumn(Modifier.fillMaxSize().wrapContentWidth().widthIn(max = 600.dp)) {
-            items(songs, key = { it.at.toString() + it.title }) { song ->
+            items(songs, key = { it.at }) { song ->
+                val isOpen = open == song.at
                 ListItem(
                     headlineContent = {
                         Text(
@@ -117,7 +126,21 @@ fun History(modifier: Modifier = Modifier) {
                             maxLines = 1,
                         )
                     },
-                    supportingContent = song.artist?.let { { Text(it, maxLines = 1) } },
+                    modifier = Modifier.clickable { open = if (isOpen) null else song.at },
+                    supportingContent = {
+                        Column {
+                            song.artist?.let { Text(it, maxLines = 1) }
+                            if (isOpen) {
+                                val fav = Fav(song.title, song.artist, song.art)
+                                val saved = isFavourite(fav)
+                                TextButton({ toggleFavourite(context, fav) }) {
+                                    Icon(painterResource(heart(saved)), null, Modifier.size(18.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(stringResource(heartLabel(saved)))
+                                }
+                            }
+                        }
+                    },
                     leadingContent = {
                         Cover(song.art, Modifier.size(48.dp).clip(MaterialTheme.shapes.small))
                     },

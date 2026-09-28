@@ -78,11 +78,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private val Seed = Color(0xFF0439D9)
+internal val Seed = Color(0xFF0439D9)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         HttpResponseCache.install(File(cacheDir, "http"), 20L shl 20)
+        loadFavourites(this)
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         setContent {
@@ -119,15 +120,17 @@ private fun Radio() {
         }, ContextCompat.getMainExecutor(context))
         onDispose { MediaController.releaseFuture(future) }
     }
-    val pager = rememberPagerState { 3 }
+    val pager = rememberPagerState { 4 }
     val scope = rememberCoroutineScope()
     Scaffold(
         topBar = {
             PrimaryTabRow(pager.currentPage, Modifier.statusBarsPadding()) {
-                listOf(R.string.player, R.string.schedule, R.string.recent).forEachIndexed {
-                        i,
-                        label,
-                    ->
+                listOf(
+                    R.string.player,
+                    R.string.schedule,
+                    R.string.recent,
+                    R.string.you,
+                ).forEachIndexed { i, label ->
                     Tab(
                         selected = pager.currentPage == i,
                         onClick = { scope.launch { pager.animateScrollToPage(i) } },
@@ -137,13 +140,15 @@ private fun Radio() {
             }
         },
     ) { padding ->
-        HorizontalPager(pager, Modifier.padding(padding), beyondViewportPageCount = 2) { page ->
-            if (page == 1) {
-                Schedule()
-            } else if (page == 2) {
-                History()
-            } else {
-                PlayerPage(
+        HorizontalPager(pager, Modifier.padding(padding), beyondViewportPageCount = 3) { page ->
+            when (page) {
+                1 -> Schedule()
+
+                2 -> History()
+
+                3 -> You()
+
+                else -> PlayerPage(
                     meta,
                     playing = on,
                     failed = failed,

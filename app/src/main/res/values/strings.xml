@@ -25,4 +25,23 @@
   <string name="not_now">Not now</string>
   <string name="starting_now">Starting now</string>
   <string name="reminder_channel">Show reminders</string>
+  <string name="you">You</string>
+  <string name="favourites">Favourites</string>
+  <string name="add_favourite">Add to favourites</string>
+  <string name="in_favourites">In favourites</string>
+  <string name="remove">Remove</string>
+  <string name="remove_question">Remove from favourites?</string>
+  <string name="songs">Songs</string>
+  <string name="shows">Shows</string>
+  <string name="no_favourites">No favourites yet</string>
+  <string name="no_stats">Listen for a while to see stats here</string>
+  <string name="this_week">This week</string>
+  <string name="minutes">%d min</string>
+  <string name="hours_minutes">%1$d h %2$d min</string>
+  <string name="top_artists">Top artists</string>
+  <string name="top_shows">Top shows</string>
+  <plurals name="streak">
+    <item quantity="one">%d day streak</item>
+    <item quantity="other">%d day streak</item>
+  </plurals>
 </resources>

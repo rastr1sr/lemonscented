@@ -11,12 +11,13 @@ okhttp = "5.5.0"
 lifecycle = "2.11.0"
 navigation3 = "1.2.0"
 serialization = "1.11.0"
+material3 = "1.5.0-alpha29"
 
 [libraries]
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activity" }
 androidx-compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }
-androidx-compose-material3 = { module = "androidx.compose.material3:material3" }
-androidx-compose-material3-navigation-suite = { module = "androidx.compose.material3:material3-adaptive-navigation-suite" }
+androidx-compose-material3 = { module = "androidx.compose.material3:material3", version.ref = "material3" }
+androidx-compose-material3-navigation-suite = { module = "androidx.compose.material3:material3-adaptive-navigation-suite", version.ref = "material3" }
 androidx-compose-ui = { module = "androidx.compose.ui:ui" }
 androidx-lifecycle-viewmodel-compose = { module = "androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "lifecycle" }
 androidx-lifecycle-runtime-compose = { module = "androidx.lifecycle:lifecycle-runtime-compose", version.ref = "lifecycle" }

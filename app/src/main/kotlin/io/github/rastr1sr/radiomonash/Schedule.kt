@@ -17,11 +17,13 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -111,12 +113,14 @@ internal fun parseSchedule(text: String): List<Show>? = try {
     null
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun Schedule(modifier: Modifier = Modifier) {
     val zone = ZoneId.systemDefault()
     var attempt by remember { mutableIntStateOf(0) }
     var shows by remember { mutableStateOf(cache) }
     var failed by remember { mutableStateOf(false) }
+    var refreshing by remember { mutableStateOf(false) }
     val file = File(LocalContext.current.filesDir, "schedule.json")
     val now by produceState(Instant.now()) {
         while (true) {
@@ -126,7 +130,10 @@ fun Schedule(modifier: Modifier = Modifier) {
     }
     LaunchedEffect(attempt, now) {
         if (shows == null) shows = withContext(Dispatchers.IO) { saved(file) }
-        if (shows != null && Instant.now() < cachedAt.plusSeconds(600)) return@LaunchedEffect
+        if (shows != null && Instant.now() < cachedAt.plusSeconds(600)) {
+            refreshing = false
+            return@LaunchedEffect
+        }
         failed = false
         val fresh = withContext(Dispatchers.IO) { schedule(zone, file) }
         if (fresh != null) {
@@ -135,6 +142,7 @@ fun Schedule(modifier: Modifier = Modifier) {
             shows = fresh
         }
         failed = shows == null
+        refreshing = false
     }
     val locale = LocalConfiguration.current.locales[0]
     val day = DateTimeFormatter.ofPattern(DateFormat.getBestDateTimePattern(locale, "EEEEdMMMM"))
@@ -166,62 +174,74 @@ fun Schedule(modifier: Modifier = Modifier) {
             Text(stringResource(R.string.no_shows))
         }
     }
-    LazyColumn(modifier.fillMaxSize().wrapContentWidth().widthIn(max = 600.dp)) {
-        upcoming.groupBy {
-            it.start.atZone(zone).toLocalDate()
-        }.forEach { (date, list) ->
-            item(date.toString()) {
-                Text(
-                    date.format(day),
-                    Modifier
-                        .padding(start = 24.dp, top = 16.dp, bottom = 4.dp)
-                        .semantics { heading() },
-                    color = MaterialTheme.colorScheme.primary,
-                    style = MaterialTheme.typography.labelLarge,
-                )
-            }
-            items(list, key = { it.id }) { show ->
-                val onNow = now >= show.start && now < show.end
-                ListItem(
-                    headlineContent = { Text(show.title, Modifier.basicMarquee(), maxLines = 1) },
-                    modifier = Modifier.clickable(
-                        enabled = show.description != null,
-                        onClickLabel = describe,
-                    ) {
-                        open = if (open == show.id) null else show.id
-                    },
-                    supportingContent = show.description?.let {
-                        {
-                            Text(
-                                if (open == show.id) it else preview(it),
-                                maxLines = if (open == show.id) Int.MAX_VALUE else 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                    },
-                    leadingContent = {
-                        Text(
-                            if (onNow) nowLabel else show.start.atZone(zone).format(time),
-                            Modifier.width(timeWidth),
-                            style = timeStyle,
-                        )
-                    },
-                    trailingContent = {
-                        Text(
-                            if (show.live) live else "",
-                            Modifier.width(liveWidth),
-                            color = MaterialTheme.colorScheme.error,
-                            style = liveStyle,
-                        )
-                    },
-                    colors = ListItemDefaults.colors(
-                        containerColor = if (onNow) {
-                            MaterialTheme.colorScheme.secondaryContainer
-                        } else {
-                            Color.Transparent
+    PullToRefreshBox(
+        isRefreshing = refreshing,
+        onRefresh = {
+            refreshing = true
+            cachedAt = Instant.EPOCH
+            attempt++
+        },
+        modifier = modifier,
+    ) {
+        LazyColumn(Modifier.fillMaxSize().wrapContentWidth().widthIn(max = 600.dp)) {
+            upcoming.groupBy {
+                it.start.atZone(zone).toLocalDate()
+            }.forEach { (date, list) ->
+                item(date.toString()) {
+                    Text(
+                        date.format(day),
+                        Modifier
+                            .padding(start = 24.dp, top = 16.dp, bottom = 4.dp)
+                            .semantics { heading() },
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                }
+                items(list, key = { it.id }) { show ->
+                    val onNow = now >= show.start && now < show.end
+                    ListItem(
+                        headlineContent = {
+                            Text(show.title, Modifier.basicMarquee(), maxLines = 1)
                         },
-                    ),
-                )
+                        modifier = Modifier.clickable(
+                            enabled = show.description != null,
+                            onClickLabel = describe,
+                        ) {
+                            open = if (open == show.id) null else show.id
+                        },
+                        supportingContent = show.description?.let {
+                            {
+                                Text(
+                                    if (open == show.id) it else preview(it),
+                                    maxLines = if (open == show.id) Int.MAX_VALUE else 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        },
+                        leadingContent = {
+                            Text(
+                                if (onNow) nowLabel else show.start.atZone(zone).format(time),
+                                Modifier.width(timeWidth),
+                                style = timeStyle,
+                            )
+                        },
+                        trailingContent = {
+                            Text(
+                                if (show.live) live else "",
+                                Modifier.width(liveWidth),
+                                color = MaterialTheme.colorScheme.error,
+                                style = liveStyle,
+                            )
+                        },
+                        colors = ListItemDefaults.colors(
+                            containerColor = if (onNow) {
+                                MaterialTheme.colorScheme.secondaryContainer
+                            } else {
+                                Color.Transparent
+                            },
+                        ),
+                    )
+                }
             }
         }
     }

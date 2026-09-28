@@ -86,4 +86,10 @@ class RadiocultTest {
         assertEquals(null, played[1].art)
         assertEquals(null, parseHistory("""{"data":[{"playoutStart":"soon","title":"x"}]}"""))
     }
+
+    @Test
+    fun decodesReminder() {
+        assertEquals(1790000000000L to "Oak | Ash", decodeReminder("1790000000000|Oak | Ash"))
+        assertEquals(null, decodeReminder("garbage"))
+    }
 }

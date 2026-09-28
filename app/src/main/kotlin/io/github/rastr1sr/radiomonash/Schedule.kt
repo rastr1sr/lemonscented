@@ -1,12 +1,17 @@
 package io.github.rastr1sr.radiomonash
 
+import android.Manifest
+import android.os.Build
 import android.text.format.DateFormat
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -17,7 +22,9 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
@@ -38,6 +45,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -121,6 +129,11 @@ fun Schedule(modifier: Modifier = Modifier) {
     var shows by remember { mutableStateOf(cache) }
     var failed by remember { mutableStateOf(false) }
     var refreshing by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    var reminded by remember { mutableStateOf(reminders(context)) }
+    var asking by remember { mutableStateOf<Show?>(null) }
+    val permission =
+        rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
     val file = File(LocalContext.current.filesDir, "schedule.json")
     val now by produceState(Instant.now()) {
         while (true) {
@@ -199,23 +212,45 @@ fun Schedule(modifier: Modifier = Modifier) {
                 }
                 items(list, key = { it.id }) { show ->
                     val onNow = now >= show.start && now < show.end
+                    val later = show.start > now
+                    val isOpen = open == show.id
+                    val hasReminder = show.id in reminded
+                    val bell = if (hasReminder) R.drawable.ic_bell_on else R.drawable.ic_bell_off
+                    val label = if (hasReminder) R.string.reminder_set else R.string.remind_me
                     ListItem(
                         headlineContent = {
-                            Text(show.title, Modifier.basicMarquee(), maxLines = 1)
+                            Text(
+                                show.title,
+                                Modifier.basicMarquee(),
+                                maxLines = 1,
+                            )
                         },
                         modifier = Modifier.clickable(
-                            enabled = show.description != null,
+                            enabled = show.description != null || later,
                             onClickLabel = describe,
                         ) {
-                            open = if (open == show.id) null else show.id
+                            open = if (isOpen) null else show.id
                         },
-                        supportingContent = show.description?.let {
+                        supportingContent = if (show.description == null && !(isOpen && later)) {
+                            null
+                        } else {
                             {
-                                Text(
-                                    if (open == show.id) it else preview(it),
-                                    maxLines = if (open == show.id) Int.MAX_VALUE else 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
+                                Column {
+                                    show.description?.let {
+                                        Text(
+                                            if (isOpen) it else preview(it),
+                                            maxLines = if (isOpen) Int.MAX_VALUE else 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                    if (isOpen && later) {
+                                        TextButton(onClick = { asking = show }) {
+                                            Icon(painterResource(bell), null, Modifier.size(18.dp))
+                                            Spacer(Modifier.width(8.dp))
+                                            Text(stringResource(label))
+                                        }
+                                    }
+                                }
                             }
                         },
                         leadingContent = {
@@ -226,12 +261,25 @@ fun Schedule(modifier: Modifier = Modifier) {
                             )
                         },
                         trailingContent = {
-                            Text(
-                                if (show.live) live else "",
-                                Modifier.width(liveWidth),
-                                color = MaterialTheme.colorScheme.error,
-                                style = liveStyle,
-                            )
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                if (hasReminder) {
+                                    Icon(
+                                        painterResource(R.drawable.ic_bell_on),
+                                        stringResource(R.string.reminder_set),
+                                        Modifier.size(16.dp),
+                                        tint = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
+                                Text(
+                                    if (show.live) live else "",
+                                    Modifier.width(liveWidth),
+                                    color = MaterialTheme.colorScheme.error,
+                                    style = liveStyle,
+                                )
+                            }
                         },
                         colors = ListItemDefaults.colors(
                             containerColor = if (onNow) {
@@ -244,6 +292,46 @@ fun Schedule(modifier: Modifier = Modifier) {
                 }
             }
         }
+    }
+    asking?.let { show ->
+        val hasReminder = show.id in reminded
+        AlertDialog(
+            onDismissRequest = { asking = null },
+            title = { Text(show.title) },
+            text = {
+                Text(
+                    stringResource(
+                        if (hasReminder) R.string.cancel_question else R.string.remind_question,
+                    ),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    asking = null
+                    if (hasReminder) {
+                        forget(context, show.id)
+                        reminded = reminded - show.id
+                    } else {
+                        remind(context, show.id, show.start.toEpochMilli(), show.title)
+                        reminded = reminded + show.id
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            permission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                    }
+                }) {
+                    Text(
+                        stringResource(
+                            if (hasReminder) R.string.cancel_reminder else R.string.remind_me,
+                        ),
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { asking = null }) {
+                    Text(stringResource(if (hasReminder) R.string.keep else R.string.not_now))
+                }
+            },
+        )
     }
 }
 

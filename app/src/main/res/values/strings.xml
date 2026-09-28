@@ -62,4 +62,5 @@
   <string name="song_info">Song info</string>
   <string name="copy">Copy</string>
   <string name="close">Close</string>
+  <string name="show_info">Show info</string>
 </resources>

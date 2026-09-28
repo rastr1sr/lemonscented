@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
@@ -158,9 +160,10 @@ private fun SongTitle(meta: MediaMetadata) {
     val title = meta.title?.toString()
     val artist = meta.artist?.toString()
     var info by remember { mutableStateOf(false) }
+    val show = currentShow()?.takeIf { meta.isShow && it.description != null }
+    val song = title != null && artist != null
     Row(verticalAlignment = Alignment.CenterVertically) {
-        val song = title != null && artist != null
-        if (song) Spacer(Modifier.width(40.dp))
+        if (song || show != null) Spacer(Modifier.width(40.dp))
         Text(
             title ?: stringResource(R.string.app_name),
             Modifier.weight(1f, fill = false).basicMarquee(iterations = Int.MAX_VALUE),
@@ -168,17 +171,46 @@ private fun SongTitle(meta: MediaMetadata) {
             style = MaterialTheme.typography.titleLarge,
             textAlign = TextAlign.Center,
         )
-        if (song) {
+        if (song || show != null) {
             IconButton({ info = true }, Modifier.size(40.dp)) {
                 Icon(
                     painterResource(R.drawable.ic_info),
-                    stringResource(R.string.song_info),
+                    stringResource(if (song) R.string.song_info else R.string.show_info),
                     Modifier.size(20.dp),
                 )
             }
         }
     }
-    if (info && title != null && artist != null) SongInfo(meta, title, artist) { info = false }
+    if (!info) return
+    if (title != null && artist != null) {
+        SongInfo(meta, title, artist) { info = false }
+    } else if (show != null) {
+        ShowInfo(meta, show) { info = false }
+    }
+}
+
+@Composable
+private fun ShowInfo(meta: MediaMetadata, show: Show, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Artwork(meta, Modifier.size(56.dp).clip(MaterialTheme.shapes.small), still = true)
+                Column(Modifier.padding(start = 16.dp)) {
+                    Text(show.title, style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        stringResource(R.string.live),
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                }
+            }
+        },
+        text = {
+            Text(show.description.orEmpty(), Modifier.verticalScroll(rememberScrollState()))
+        },
+        confirmButton = { TextButton(onDismiss) { Text(stringResource(R.string.close)) } },
+    )
 }
 
 @Composable

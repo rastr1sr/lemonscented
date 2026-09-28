@@ -1,5 +1,6 @@
 package io.github.rastr1sr.radiomonash
 
+import android.os.SystemClock
 import androidx.annotation.OptIn
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
@@ -24,6 +25,7 @@ import org.json.JSONObject
 class PlaybackService : MediaSessionService() {
     private lateinit var session: MediaSession
     private var request = 0
+    private var since = 0L
 
     @OptIn(UnstableApi::class)
     override fun onCreate() {
@@ -42,6 +44,10 @@ class PlaybackService : MediaSessionService() {
                     ?: return
                 refresh(player, icy)
             }
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (isPlaying) since = SystemClock.elapsedRealtime() else flush()
+            }
         })
         refresh(player, null)
         val live = object : ForwardingPlayer(player) {
@@ -53,9 +59,16 @@ class PlaybackService : MediaSessionService() {
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo) = session
 
     override fun onDestroy() {
+        flush()
         session.player.release()
         session.release()
         super.onDestroy()
+    }
+
+    private fun flush() {
+        if (since == 0L) return
+        addListening(this, (SystemClock.elapsedRealtime() - since) / 1000)
+        since = 0L
     }
 
     private fun refresh(player: Player, icy: String?) {
@@ -64,6 +77,9 @@ class PlaybackService : MediaSessionService() {
             val info = nowPlaying(icy) ?: return@thread
             ContextCompat.getMainExecutor(this).execute {
                 if (id != request) return@execute
+                if (icy != null && player.isPlaying) {
+                    logPlay(this, info.artist?.toString(), info.station?.toString())
+                }
                 val item = player.getMediaItemAt(0)
                 player.replaceMediaItem(0, item.buildUpon().setMediaMetadata(info).build())
             }

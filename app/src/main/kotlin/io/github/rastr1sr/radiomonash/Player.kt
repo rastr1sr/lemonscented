@@ -43,6 +43,7 @@ import kotlinx.coroutines.withContext
 fun PlayerPage(
     meta: MediaMetadata,
     playing: Boolean,
+    failed: Boolean,
     enabled: Boolean,
     onToggle: () -> Unit,
     modifier: Modifier = Modifier,
@@ -128,6 +129,14 @@ fun PlayerPage(
                 painterResource(if (playing) R.drawable.ic_stop else R.drawable.ic_play),
                 stringResource(if (playing) R.string.stop else R.string.play),
                 Modifier.size(32.dp),
+            )
+        }
+        if (failed) {
+            Text(
+                stringResource(R.string.stream_failed),
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center,
             )
         }
     }

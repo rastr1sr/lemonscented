@@ -95,6 +95,7 @@ private fun Radio() {
     val context = LocalContext.current
     var controller by remember { mutableStateOf<MediaController?>(null) }
     var on by remember { mutableStateOf(false) }
+    var failed by remember { mutableStateOf(false) }
     var meta by remember { mutableStateOf(MediaMetadata.EMPTY) }
     DisposableEffect(context) {
         val token = SessionToken(context, ComponentName(context, PlaybackService::class.java))
@@ -103,6 +104,7 @@ private fun Radio() {
             val c = future.get()
             val update = {
                 on = c.playWhenReady && c.playbackState != Player.STATE_IDLE
+                failed = c.playerError != null
                 meta = c.mediaMetadata
             }
             c.addListener(object : Player.Listener {
@@ -135,6 +137,7 @@ private fun Radio() {
                 PlayerPage(
                     meta,
                     playing = on,
+                    failed = failed,
                     enabled = controller != null,
                     onToggle = { controller?.run { if (on) pause() else play() } },
                 )

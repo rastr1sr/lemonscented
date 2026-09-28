@@ -10,4 +10,5 @@
   <string name="schedule_failed">Couldn\'t load the schedule</string>
   <string name="retry">Retry</string>
   <string name="show_description">Show description</string>
+  <string name="stream_failed">Couldn\'t connect. Tap play to retry.</string>
 </resources>

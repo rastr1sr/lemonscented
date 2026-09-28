@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -134,6 +135,8 @@ fun PlayerPage(
                     color = MaterialTheme.colorScheme.primary,
                     maxLines = 1,
                 )
+            } else if (show) {
+                Equaliser(playing, Modifier.width(160.dp).fillMaxHeight())
             }
         }
         Spacer(Modifier.height(16.dp))

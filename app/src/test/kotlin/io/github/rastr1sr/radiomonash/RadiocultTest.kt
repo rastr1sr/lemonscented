@@ -77,7 +77,7 @@ class RadiocultTest {
         val text = """
             {"data":[{"playoutStart":"2026-09-28T00:58:22.000Z","title":"Song","artist":"Band",
             "artwork":{"128x128":"https://cdn.example/a.jpg"}},
-            {"playoutStart":"2026-09-28T00:55:00.000Z","title":"Other","artwork":{"128x128":"file:///x"}}]}
+            {"playoutStart":"2026-09-28T00:55:00.000Z","title":"Other","artist":null,"artwork":{"128x128":"file:///x"}}]}
         """
         val played = parseHistory(text)!!
         assertEquals(listOf("Song", "Other"), played.map { it.title })

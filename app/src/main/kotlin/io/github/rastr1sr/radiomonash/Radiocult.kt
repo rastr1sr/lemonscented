@@ -16,7 +16,7 @@ fun radiocult(path: String): String {
     }
 }
 
-fun JSONObject.str(key: String) = optString(key).ifEmpty { null }
+fun JSONObject.str(key: String) = if (isNull(key)) null else optString(key).ifEmpty { null }
 
 fun isHttps(url: String) = url.startsWith("https://")
 

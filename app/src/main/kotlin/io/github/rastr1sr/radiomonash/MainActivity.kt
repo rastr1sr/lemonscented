@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -36,6 +37,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -48,6 +50,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -102,6 +105,7 @@ private fun Radio() {
     var on by remember { mutableStateOf(false) }
     var failed by remember { mutableStateOf(false) }
     var meta by remember { mutableStateOf(MediaMetadata.EMPTY) }
+    var chat by rememberSaveable { mutableStateOf(false) }
     DisposableEffect(context) {
         val token = SessionToken(context, ComponentName(context, PlaybackService::class.java))
         val future = MediaController.Builder(context, token).buildAsync()
@@ -122,38 +126,53 @@ private fun Radio() {
     }
     val pager = rememberPagerState { 4 }
     val scope = rememberCoroutineScope()
-    Scaffold(
-        topBar = {
-            PrimaryTabRow(pager.currentPage, Modifier.statusBarsPadding()) {
-                listOf(
-                    R.string.player,
-                    R.string.schedule,
-                    R.string.recent,
-                    R.string.you,
-                ).forEachIndexed { i, label ->
-                    Tab(
-                        selected = pager.currentPage == i,
-                        onClick = { scope.launch { pager.animateScrollToPage(i) } },
-                        text = { Text(stringResource(label)) },
+    Box {
+        Scaffold(
+            topBar = {
+                PrimaryTabRow(pager.currentPage, Modifier.statusBarsPadding()) {
+                    listOf(
+                        R.string.player,
+                        R.string.schedule,
+                        R.string.recent,
+                        R.string.you,
+                    ).forEachIndexed { i, label ->
+                        Tab(
+                            selected = pager.currentPage == i,
+                            onClick = { scope.launch { pager.animateScrollToPage(i) } },
+                            text = { Text(stringResource(label)) },
+                        )
+                    }
+                }
+            },
+        ) { padding ->
+            HorizontalPager(pager, Modifier.padding(padding), beyondViewportPageCount = 3) { page ->
+                when (page) {
+                    1 -> Schedule()
+
+                    2 -> History()
+
+                    3 -> You()
+
+                    else -> PlayerPage(
+                        meta,
+                        playing = on,
+                        failed = failed,
+                        enabled = controller != null,
+                        onToggle = { controller?.run { if (on) pause() else play() } },
+                        onChat = { chat = true },
                     )
                 }
             }
-        },
-    ) { padding ->
-        HorizontalPager(pager, Modifier.padding(padding), beyondViewportPageCount = 3) { page ->
-            when (page) {
-                1 -> Schedule()
-
-                2 -> History()
-
-                3 -> You()
-
-                else -> PlayerPage(
+        }
+        if (chat) {
+            Surface(Modifier.fillMaxSize()) {
+                ChatScreen(
                     meta,
                     playing = on,
-                    failed = failed,
                     enabled = controller != null,
                     onToggle = { controller?.run { if (on) pause() else play() } },
+                    onBack = { chat = false },
+                    modifier = Modifier.statusBarsPadding().navigationBarsPadding(),
                 )
             }
         }

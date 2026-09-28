@@ -80,18 +80,10 @@ fun PlayerPage(
             .weight(1f, fill = false)
             .aspectRatio(1f)
             .clip(MaterialTheme.shapes.extraLarge)
-        val question = @Composable {
-            Icon(
-                painterResource(R.drawable.ic_question),
-                null,
-                Modifier.fillMaxSize(0.33f),
-                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-            )
-        }
         when {
-            failed -> Cover(null, cover, question)
+            failed -> Cover(null, cover) { Question() }
             show || meta.title == null -> Lemon(show, cover)
-            else -> Cover(meta.artworkUri?.toString(), cover, question)
+            else -> Cover(meta.artworkUri?.toString(), cover) { Question() }
         }
         Spacer(Modifier.height(16.dp))
         Text(
@@ -178,6 +170,16 @@ internal fun heart(saved: Boolean) = if (saved) R.drawable.ic_heart_on else R.dr
 
 internal fun heartLabel(saved: Boolean) =
     if (saved) R.string.in_favourites else R.string.add_favourite
+
+@Composable
+internal fun Question() {
+    Icon(
+        painterResource(R.drawable.ic_question),
+        null,
+        Modifier.fillMaxSize(0.33f),
+        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+    )
+}
 
 @Composable
 internal fun Cover(

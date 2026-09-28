@@ -142,7 +142,9 @@ fun History(modifier: Modifier = Modifier) {
                         }
                     },
                     leadingContent = {
-                        Cover(song.art, Modifier.size(48.dp).clip(MaterialTheme.shapes.small))
+                        Cover(song.art, Modifier.size(48.dp).clip(MaterialTheme.shapes.small)) {
+                            Question()
+                        }
                     },
                     trailingContent = { Text(song.at.atZone(zone).format(time)) },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent),

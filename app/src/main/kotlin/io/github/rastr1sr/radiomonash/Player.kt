@@ -1,5 +1,9 @@
 package io.github.rastr1sr.radiomonash
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
@@ -45,6 +49,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import androidx.media3.common.MediaMetadata
 import java.time.Instant
 import java.time.ZoneId
@@ -74,13 +79,7 @@ fun PlayerPage(
         Artwork(meta, cover, failed)
         Spacer(Modifier.height(16.dp))
         val artist = meta.artist?.toString()
-        Text(
-            meta.title?.toString() ?: stringResource(R.string.app_name),
-            Modifier.basicMarquee(iterations = Int.MAX_VALUE),
-            maxLines = 1,
-            style = MaterialTheme.typography.titleLarge,
-            textAlign = TextAlign.Center,
-        )
+        SongTitle(meta)
         val station = meta.station?.toString()
         Line(MaterialTheme.typography.bodyLarge) {
             if (artist != null) {
@@ -152,6 +151,88 @@ fun PlayerPage(
             )
         }
     }
+}
+
+@Composable
+private fun SongTitle(meta: MediaMetadata) {
+    val title = meta.title?.toString()
+    val artist = meta.artist?.toString()
+    var info by remember { mutableStateOf(false) }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        val song = title != null && artist != null
+        if (song) Spacer(Modifier.width(40.dp))
+        Text(
+            title ?: stringResource(R.string.app_name),
+            Modifier.weight(1f, fill = false).basicMarquee(iterations = Int.MAX_VALUE),
+            maxLines = 1,
+            style = MaterialTheme.typography.titleLarge,
+            textAlign = TextAlign.Center,
+        )
+        if (song) {
+            IconButton({ info = true }, Modifier.size(40.dp)) {
+                Icon(
+                    painterResource(R.drawable.ic_info),
+                    stringResource(R.string.song_info),
+                    Modifier.size(20.dp),
+                )
+            }
+        }
+    }
+    if (info && title != null && artist != null) SongInfo(meta, title, artist) { info = false }
+}
+
+@Composable
+private fun SongInfo(meta: MediaMetadata, title: String, artist: String, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val query = Uri.encode("$title $artist")
+    val open = { url: String ->
+        onDismiss()
+        context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri()))
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Cover(
+                    meta.artworkUri?.toString(),
+                    Modifier.size(56.dp).clip(MaterialTheme.shapes.small),
+                ) {
+                    Question()
+                }
+                Column(Modifier.padding(start = 16.dp)) {
+                    Text(title, style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        artist,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    meta.station?.let {
+                        Text(
+                            it.toString(),
+                            color = MaterialTheme.colorScheme.primary,
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                    }
+                }
+            }
+        },
+        text = {
+            Column {
+                TextButton({ open("https://open.spotify.com/search/$query") }) {
+                    Text(stringResource(R.string.search_spotify))
+                }
+                TextButton({ open("https://music.apple.com/search?term=$query") }) {
+                    Text(stringResource(R.string.search_apple))
+                }
+                TextButton({
+                    context.getSystemService(ClipboardManager::class.java)
+                        .setPrimaryClip(ClipData.newPlainText(title, "$title - $artist"))
+                    onDismiss()
+                }) { Text(stringResource(R.string.copy)) }
+            }
+        },
+        confirmButton = { TextButton(onDismiss) { Text(stringResource(R.string.close)) } },
+    )
 }
 
 @Composable

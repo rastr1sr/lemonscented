@@ -44,6 +44,8 @@
     <item quantity="one">%d day streak</item>
     <item quantity="other">%d day streak</item>
   </plurals>
+  <string name="search_spotify">Search on Spotify</string>
+  <string name="search_apple">Search on Apple Music</string>
   <string name="sleep_timer">Sleep timer</string>
   <string name="stops_at">Stops at %s</string>
   <string name="end_of_show">End of this show</string>
@@ -57,4 +59,7 @@
   <string name="unfollow">Unfollow</string>
   <string name="follow_question">Get a reminder every time this show airs?</string>
   <string name="unfollow_question">Stop reminders for this show?</string>
+  <string name="song_info">Song info</string>
+  <string name="copy">Copy</string>
+  <string name="close">Close</string>
 </resources>

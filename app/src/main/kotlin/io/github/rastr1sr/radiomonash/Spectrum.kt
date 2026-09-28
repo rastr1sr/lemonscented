@@ -1,5 +1,6 @@
 package io.github.rastr1sr.radiomonash
 
+import android.os.SystemClock
 import androidx.compose.foundation.Canvas
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -29,25 +30,41 @@ import kotlin.math.sqrt
 
 private const val SIZE = 1024
 private const val BANDS = 16
+private const val OUTPUT_LAG_MS = 300L
 
 @UnstableApi
 internal object Spectrum : TeeAudioProcessor.AudioBufferSink {
-    @Volatile
-    var levels = FloatArray(BANDS)
-        private set
+    private val queue = ArrayDeque<Pair<Long, FloatArray>>()
+    private var current = FloatArray(BANDS)
+    private var rate = 0
+    private var start = 0L
+    private var frames = 0L
     private var channels = 0
     private var encoding = C.ENCODING_INVALID
     private val samples = FloatArray(SIZE)
     private var filled = 0
 
     override fun flush(sampleRateHz: Int, channelCount: Int, encoding: Int) {
+        rate = sampleRateHz
         channels = channelCount
         this.encoding = encoding
         filled = 0
+        frames = 0
+        start = 0
+        synchronized(queue) { queue.clear() }
+    }
+
+    fun levels(): FloatArray = synchronized(queue) {
+        val due = SystemClock.uptimeMillis() - OUTPUT_LAG_MS
+        while ((queue.firstOrNull()?.first ?: Long.MAX_VALUE) <= due) {
+            current = queue.removeFirst().second
+        }
+        current
     }
 
     override fun handleBuffer(buffer: ByteBuffer) {
         if (encoding != C.ENCODING_PCM_16BIT) return
+        if (start == 0L) start = SystemClock.uptimeMillis()
         val data = buffer.duplicate().order(ByteOrder.nativeOrder())
         val frame = 2 * channels
         var i = data.position()
@@ -55,6 +72,7 @@ internal object Spectrum : TeeAudioProcessor.AudioBufferSink {
             var sum = 0
             for (c in 0 until channels) sum += data.getShort(i + 2 * c)
             samples[filled++] = sum / (channels * 32_768f)
+            frames++
             if (filled == SIZE) {
                 analyse()
                 filled = 0
@@ -65,9 +83,13 @@ internal object Spectrum : TeeAudioProcessor.AudioBufferSink {
 
     private fun analyse() {
         val chunk = SIZE / BANDS
-        levels = FloatArray(BANDS) { b ->
+        val levels = FloatArray(BANDS) { b ->
             val power = (b * chunk until (b + 1) * chunk).sumOf { samples[it].toDouble().pow(2) }
             ((20 * log10(sqrt(power / chunk) + 1e-6) + 45) / 40).toFloat().coerceIn(0f, 1f)
+        }
+        synchronized(queue) {
+            queue.addLast(start + frames * 1000 / rate to levels)
+            if (queue.size > 64) queue.removeFirst()
         }
     }
 }
@@ -80,7 +102,7 @@ internal fun Equaliser(active: Boolean, modifier: Modifier = Modifier) {
     LaunchedEffect(active) {
         while (active || shown.any { it > 0.005f }) {
             withFrameNanos {
-                val target = Spectrum.levels
+                val target = Spectrum.levels()
                 shown = FloatArray(BANDS) { i ->
                     val goal = if (active) target[i] else 0f
                     shown[i] + (goal - shown[i]) * if (goal > shown[i]) 0.45f else 0.1f

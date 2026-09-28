@@ -65,4 +65,10 @@ class RadiocultTest {
         assertEquals(null, parseSchedule(badDate))
         assertEquals(null, parseSchedule("not json"))
     }
+
+    @Test
+    fun previewsFirstLine() {
+        assertEquals("Two hours of music…", preview("Two hours of music.\n\nNo talking."))
+        assertEquals("One line only.", preview("One line only."))
+    }
 }

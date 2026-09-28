@@ -31,6 +31,8 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.MediaMetadata
@@ -63,6 +65,7 @@ fun PlayerPage(
         }
         artLoading = false
     }
+    val loading = stringResource(R.string.loading)
     Column(
         modifier.fillMaxSize().padding(32.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
@@ -74,7 +77,7 @@ fun PlayerPage(
             .clip(MaterialTheme.shapes.extraLarge)
         val bitmap = art
         when {
-            artLoading -> Skeleton(cover)
+            artLoading -> Skeleton(cover.clearAndSetSemantics { contentDescription = loading })
 
             bitmap != null -> Image(bitmap, null, cover, contentScale = ContentScale.Crop)
 

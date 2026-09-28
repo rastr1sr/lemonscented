@@ -11,4 +11,7 @@
   <string name="retry">Retry</string>
   <string name="show_description">Show description</string>
   <string name="stream_failed">Couldn\'t connect. Tap play to retry.</string>
+  <string name="no_shows">No shows scheduled this week</string>
+  <string name="loading">Loading</string>
+  <string name="now">Now</string>
 </resources>

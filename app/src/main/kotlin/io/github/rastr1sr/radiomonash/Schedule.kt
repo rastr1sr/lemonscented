@@ -4,6 +4,7 @@ import android.text.format.DateFormat
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -12,6 +13,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.ListItem
@@ -34,7 +37,12 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import java.io.File
 import java.io.IOException
@@ -77,6 +85,11 @@ private fun saved(file: File): List<Show>? = try {
     parseSchedule(file.readText())
 } catch (e: IOException) {
     null
+}
+
+internal fun preview(text: String): String {
+    val first = text.substringBefore('\n')
+    return if (first.length < text.length) first.trimEnd('.') + "…" else first
 }
 
 internal fun parseSchedule(text: String): List<Show>? = try {
@@ -130,6 +143,7 @@ fun Schedule(modifier: Modifier = Modifier) {
         clock,
     ).replace(Regex("\\b([hH])\\b"), "$1$1")
     val time = DateTimeFormatter.ofPattern(hours)
+    val loadingLabel = stringResource(R.string.loading)
     if (failed) {
         Column(
             modifier.fillMaxSize(),
@@ -142,7 +156,9 @@ fun Schedule(modifier: Modifier = Modifier) {
         return
     }
     val loaded = shows ?: return Column(
-        modifier.padding(horizontal = 24.dp, vertical = 20.dp),
+        modifier
+            .padding(horizontal = 24.dp, vertical = 20.dp)
+            .clearAndSetSemantics { contentDescription = loadingLabel },
         verticalArrangement = Arrangement.spacedBy(28.dp),
     ) {
         Skeleton(Modifier.size(120.dp, 14.dp))
@@ -157,25 +173,34 @@ fun Schedule(modifier: Modifier = Modifier) {
     val timeStyle = MaterialTheme.typography.bodyMedium
     val liveStyle = MaterialTheme.typography.labelSmall
     val live = stringResource(R.string.live)
+    val nowLabel = stringResource(R.string.now)
     val describe = stringResource(R.string.show_description)
     val density = LocalDensity.current
     val timeWidth = remember(loaded, time, timeStyle) {
         with(density) {
-            loaded.maxOfOrNull {
-                measurer.measure(it.start.atZone(zone).format(time), timeStyle).size.width
-            }?.toDp() ?: 0.dp
+            (loaded.map { it.start.atZone(zone).format(time) } + nowLabel)
+                .maxOf { measurer.measure(it, timeStyle).size.width }
+                .toDp()
         }
     }
     val liveWidth = with(density) { measurer.measure(live, liveStyle).size.width.toDp() }
     var open by remember { mutableStateOf<String?>(null) }
-    LazyColumn(modifier) {
-        loaded.filter { it.end > now }.groupBy {
+    val upcoming = loaded.filter { it.end > now }
+    if (upcoming.isEmpty()) {
+        return Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text(stringResource(R.string.no_shows))
+        }
+    }
+    LazyColumn(modifier.fillMaxSize().wrapContentWidth().widthIn(max = 600.dp)) {
+        upcoming.groupBy {
             it.start.atZone(zone).toLocalDate()
         }.forEach { (date, list) ->
             item(date.toString()) {
                 Text(
                     date.format(day),
-                    Modifier.padding(start = 24.dp, top = 16.dp, bottom = 4.dp),
+                    Modifier
+                        .padding(start = 24.dp, top = 16.dp, bottom = 4.dp)
+                        .semantics { heading() },
                     color = MaterialTheme.colorScheme.primary,
                     style = MaterialTheme.typography.labelLarge,
                 )
@@ -190,12 +215,18 @@ fun Schedule(modifier: Modifier = Modifier) {
                     ) {
                         open = if (open == show.id) null else show.id
                     },
-                    supportingContent = show.description?.takeIf {
-                        open == show.id
-                    }?.let { { Text(it) } },
+                    supportingContent = show.description?.let {
+                        {
+                            Text(
+                                if (open == show.id) it else preview(it),
+                                maxLines = if (open == show.id) Int.MAX_VALUE else 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    },
                     leadingContent = {
                         Text(
-                            show.start.atZone(zone).format(time),
+                            if (onNow) nowLabel else show.start.atZone(zone).format(time),
                             Modifier.width(timeWidth),
                             style = timeStyle,
                         )

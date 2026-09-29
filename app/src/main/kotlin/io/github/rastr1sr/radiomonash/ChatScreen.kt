@@ -181,15 +181,7 @@ internal fun ChatScreen(
     val sendError = stringResource(R.string.send_failed)
     LaunchedEffect(model) {
         model.errors.collect {
-            snackbar.showSnackbar(
-                if (it ==
-                    ChatError.Load
-                ) {
-                    loadError
-                } else {
-                    sendError
-                },
-            )
+            snackbar.showSnackbar(if (it == ChatError.Load) loadError else sendError)
         }
     }
     val post = {

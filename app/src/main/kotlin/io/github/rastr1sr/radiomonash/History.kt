@@ -43,16 +43,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
-import java.io.IOException
 import java.time.Instant
 import java.time.ZoneId
-import java.time.format.DateTimeParseException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
-import org.json.JSONException
 import org.json.JSONObject
 
 internal class Played(val title: String, val artist: String?, val at: Instant, val art: String?)
@@ -73,17 +70,8 @@ internal object Recent {
     private val songs = MutableStateFlow<List<Played>?>(null)
     val list: StateFlow<List<Played>?> = songs
 
-    fun load(): List<Played>? = try {
+    fun load(): List<Played>? = logged("Network", "Recent") {
         parseHistory(radiocult("streaming/history/latest-results?limit=20"))
-    } catch (e: IOException) {
-        Logs.add("Network", "Recent: ${e.message}")
-        null
-    } catch (e: JSONException) {
-        Logs.add("Network", "Recent: ${e.message}")
-        null
-    } catch (e: DateTimeParseException) {
-        Logs.add("Network", "Recent: ${e.message}")
-        null
     }?.also { songs.value = it } ?: songs.value
 }
 

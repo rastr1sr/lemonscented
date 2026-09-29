@@ -62,13 +62,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import java.io.File
-import java.io.IOException
 import java.net.URLEncoder
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.time.format.DateTimeParseException
 import java.time.temporal.ChronoUnit
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -144,21 +142,12 @@ internal class ScheduleViewModel(private val source: Shows, private val reminder
     fun toggleFollow(show: Show, shows: List<Show>) = reminders.toggleFollow(show, shows)
 }
 
-private fun schedule(zone: ZoneId, saved: File): List<Show>? = try {
+private fun schedule(zone: ZoneId, saved: File): List<Show>? = logged("Network", "Schedule") {
     val from = LocalDate.now(zone).atStartOfDay(zone).toInstant()
     val to = from.plus(7, ChronoUnit.DAYS)
     val tz = URLEncoder.encode(zone.id, "UTF-8")
     val text = radiocult("schedule?startDate=$from&endDate=$to&timezone=$tz")
     parseSchedule(text).also { saved.writeText(text) }
-} catch (e: IOException) {
-    Logs.add("Network", "Schedule: ${e.message}")
-    null
-} catch (e: JSONException) {
-    Logs.add("Network", "Schedule: ${e.message}")
-    null
-} catch (e: DateTimeParseException) {
-    Logs.add("Network", "Schedule: ${e.message}")
-    null
 }
 
 private fun saved(file: File): List<Show>? = if (!file.exists()) {

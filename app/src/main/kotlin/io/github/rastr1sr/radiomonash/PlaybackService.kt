@@ -26,7 +26,6 @@ import androidx.media3.exoplayer.audio.TeeAudioProcessor
 import androidx.media3.extractor.metadata.icy.IcyInfo
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
-import java.io.IOException
 import kotlin.concurrent.thread
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
@@ -34,7 +33,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
-import org.json.JSONException
 import org.json.JSONObject
 
 internal object Sleep {
@@ -178,7 +176,7 @@ class PlaybackService : MediaSessionService() {
         }
     }
 
-    private fun nowPlaying(icy: String?): MediaMetadata? = try {
+    private fun nowPlaying(icy: String?): MediaMetadata? = logged("Network", "Now playing") {
         val result = JSONObject(radiocult("schedule/live")).getJSONObject("result")
         val content = result.optJSONObject("content")
         val track = result.optJSONObject("metadata")
@@ -192,11 +190,5 @@ class PlaybackService : MediaSessionService() {
             )
             .setExtras(Bundle().apply { putString("mode", airMode(result).name) })
             .build()
-    } catch (e: IOException) {
-        Logs.add("Network", "Now playing: ${e.message}")
-        null
-    } catch (e: JSONException) {
-        Logs.add("Network", "Now playing: ${e.message}")
-        null
     }
 }

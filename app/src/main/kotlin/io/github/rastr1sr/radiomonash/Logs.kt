@@ -33,13 +33,16 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import java.io.IOException
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.time.format.DateTimeParseException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import org.json.JSONException
 
 internal object Logs {
     class Entry(val id: Long, val at: Instant, val tag: String, val text: String)
@@ -58,6 +61,19 @@ internal object Logs {
     fun clear() {
         state.value = emptyList()
     }
+}
+
+internal inline fun <T> logged(tag: String, what: String, block: () -> T): T? = try {
+    block()
+} catch (e: IOException) {
+    Logs.add(tag, "$what: ${e.message}")
+    null
+} catch (e: JSONException) {
+    Logs.add(tag, "$what: ${e.message}")
+    null
+} catch (e: DateTimeParseException) {
+    Logs.add(tag, "$what: ${e.message}")
+    null
 }
 
 private val stamp = DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneId.systemDefault())

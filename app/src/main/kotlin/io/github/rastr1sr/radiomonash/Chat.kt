@@ -118,16 +118,10 @@ internal class Chat(context: Context) {
         if (open) return
         open = true
         thread {
-            val history = try {
+            val history = logged("Chat", "History") {
                 parseMessages(
                     JSONObject(request("$API/messages/$STATION")).optJSONArray("messages"),
                 )
-            } catch (e: IOException) {
-                Logs.add("Chat", "History: ${e.message}")
-                null
-            } catch (e: JSONException) {
-                Logs.add("Chat", "History: ${e.message}")
-                null
             }
             main.post {
                 if (history == null) problems.tryEmit(ChatError.Load) else merge(history)
@@ -148,18 +142,12 @@ internal class Chat(context: Context) {
         if (!more.value) return
         more.value = false
         thread {
-            val page = try {
+            val page = logged("Chat", "Older messages") {
                 parseMessages(
                     JSONObject(
                         request("$API/messages/$STATION?fromTime=$first"),
                     ).optJSONArray("messages"),
                 )
-            } catch (e: IOException) {
-                Logs.add("Chat", "Older messages: ${e.message}")
-                null
-            } catch (e: JSONException) {
-                Logs.add("Chat", "Older messages: ${e.message}")
-                null
             }
             main.post {
                 if (page != null) merge(page)

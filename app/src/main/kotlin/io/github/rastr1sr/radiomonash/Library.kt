@@ -7,7 +7,6 @@ import java.io.IOException
 import java.time.LocalDate
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import org.json.JSONException
 import org.json.JSONObject
 
 internal class Fav(
@@ -29,80 +28,73 @@ internal class Stats(
     val topShows: List<String>,
 )
 
-private val favs = MutableStateFlow<List<Fav>>(emptyList())
-internal val favourites: StateFlow<List<Fav>> = favs
-
-private fun favPrefs(context: Context) =
-    context.getSharedPreferences("favourites", Context.MODE_PRIVATE)
-
-private fun listenPrefs(context: Context) =
-    context.getSharedPreferences("listening", Context.MODE_PRIVATE)
-
-private fun playLog(context: Context) = File(context.filesDir, "plays.jsonl")
-
-fun loadFavourites(context: Context) {
-    if (favs.value.isNotEmpty()) return
-    favs.value = favPrefs(context).all.values.map { value ->
-        val json = JSONObject(value.toString())
-        Fav(
-            json.getString("title"),
-            json.str("artist"),
-            json.str("art"),
-            json.optBoolean("show"),
-            json.getLong("at"),
-        )
-    }.sortedByDescending { it.at }
-}
-
 internal fun List<Fav>.has(fav: Fav) = any { it.key == fav.key }
 
-internal fun toggleFavourite(context: Context, fav: Fav) {
-    if (favs.value.has(fav)) {
-        favs.value = favs.value.filterNot { it.key == fav.key }
-        favPrefs(context).edit { remove(fav.key) }
-        return
+internal class Library(context: Context) {
+    private val favPrefs = context.getSharedPreferences("favourites", Context.MODE_PRIVATE)
+    private val listenPrefs = context.getSharedPreferences("listening", Context.MODE_PRIVATE)
+    private val playLog = File(context.filesDir, "plays.jsonl")
+    private val favs = MutableStateFlow(
+        favPrefs.all.values.map { value ->
+            val json = JSONObject(value.toString())
+            Fav(
+                json.getString("title"),
+                json.str("artist"),
+                json.str("art"),
+                json.optBoolean("show"),
+                json.getLong("at"),
+            )
+        }.sortedByDescending { it.at },
+    )
+    val favourites: StateFlow<List<Fav>> = favs
+
+    fun toggle(fav: Fav) {
+        if (favs.value.has(fav)) {
+            favs.value = favs.value.filterNot { it.key == fav.key }
+            favPrefs.edit { remove(fav.key) }
+            return
+        }
+        favs.value = listOf(fav) + favs.value
+        val json = JSONObject()
+            .put("title", fav.title)
+            .put("artist", fav.artist)
+            .put("art", fav.art)
+            .put("show", fav.show)
+            .put("at", fav.at)
+        favPrefs.edit { putString(fav.key, json.toString()) }
     }
-    favs.value = listOf(fav) + favs.value
-    val json = JSONObject()
-        .put("title", fav.title)
-        .put("artist", fav.artist)
-        .put("art", fav.art)
-        .put("show", fav.show)
-        .put("at", fav.at)
-    favPrefs(context).edit { putString(fav.key, json.toString()) }
-}
 
-fun addListening(context: Context, seconds: Long) {
-    val day = LocalDate.now().toString()
-    listenPrefs(context).edit { putLong(day, listenPrefs(context).getLong(day, 0) + seconds) }
-}
-
-fun clearStats(context: Context) {
-    listenPrefs(context).edit { clear() }
-    playLog(context).delete()
-    Logs.add("Storage", "Listening stats cleared")
-}
-
-fun logPlay(context: Context, artist: String?, show: String?) {
-    val line = JSONObject().put("artist", artist).put("show", show).toString()
-    try {
-        playLog(context).appendText(line + "\n")
-    } catch (e: IOException) {
-        Logs.add("Storage", "Play log: ${e.message}")
+    fun addListening(seconds: Long) {
+        val day = LocalDate.now().toString()
+        listenPrefs.edit { putLong(day, listenPrefs.getLong(day, 0) + seconds) }
     }
-}
 
-internal fun readStats(context: Context): Stats {
-    val days = listenPrefs(context).all.map { (day, seconds) ->
-        LocalDate.parse(day) to seconds as Long
-    }.toMap()
-    val log = playLog(context)
-    val plays = if (log.exists()) {
-        log.readLines().map { JSONObject(it).run { Play(str("artist"), str("show")) } }
-    } else {
-        emptyList()
+    fun clearStats() {
+        listenPrefs.edit { clear() }
+        playLog.delete()
+        Logs.add("Storage", "Listening stats cleared")
     }
-    return stats(days, plays, LocalDate.now())
+
+    fun logPlay(artist: String?, show: String?) {
+        val line = JSONObject().put("artist", artist).put("show", show).toString()
+        try {
+            playLog.appendText(line + "\n")
+        } catch (e: IOException) {
+            Logs.add("Storage", "Play log: ${e.message}")
+        }
+    }
+
+    fun readStats(): Stats {
+        val days = listenPrefs.all.map { (day, seconds) ->
+            LocalDate.parse(day) to seconds as Long
+        }.toMap()
+        val plays = if (playLog.exists()) {
+            playLog.readLines().map { JSONObject(it).run { Play(str("artist"), str("show")) } }
+        } else {
+            emptyList()
+        }
+        return stats(days, plays, LocalDate.now())
+    }
 }
 
 internal fun stats(days: Map<LocalDate, Long>, plays: List<Play>, today: LocalDate): Stats {

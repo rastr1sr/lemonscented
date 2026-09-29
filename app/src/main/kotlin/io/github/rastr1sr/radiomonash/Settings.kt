@@ -41,7 +41,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -55,7 +54,12 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
+import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -88,17 +92,13 @@ internal data class Look(
     val stream: String? = null,
 )
 
-internal object Looks {
-    private var state: MutableStateFlow<Look>? = null
+internal class Preferences(context: Context) {
+    private val prefs = context.getSharedPreferences("look", Context.MODE_PRIVATE)
+    private val state = MutableStateFlow(read())
+    val look: StateFlow<Look> = state
 
-    fun flow(context: Context): StateFlow<Look> = mutable(context)
-
-    private fun mutable(context: Context) = state ?: MutableStateFlow(read(context)).also {
-        state = it
-    }
-
-    fun set(context: Context, look: Look) {
-        prefs(context).edit {
+    fun set(look: Look) {
+        prefs.edit {
             putString("theme", look.theme.name)
             putBoolean("black", look.black)
             putBoolean("dynamic", look.dynamic)
@@ -108,13 +108,10 @@ internal object Looks {
             putBoolean("noisy", look.noisy)
             putString("stream", look.stream)
         }
-        mutable(context).value = look
+        state.value = look
     }
 
-    private fun prefs(context: Context) =
-        context.applicationContext.getSharedPreferences("look", Context.MODE_PRIVATE)
-
-    private fun read(context: Context) = prefs(context).run {
+    private fun read() = prefs.run {
         Look(
             Theme.entries.find { it.name == getString("theme", null) } ?: Theme.System,
             getBoolean("black", true),
@@ -125,6 +122,36 @@ internal object Looks {
             getBoolean("noisy", true),
             getString("stream", null),
         )
+    }
+}
+
+internal class SettingsViewModel(
+    private val preferences: Preferences,
+    private val library: Library,
+    private val artwork: File,
+) : ViewModel() {
+    val look: StateFlow<Look> = preferences.look
+    private val size = MutableStateFlow(cacheSize())
+    val cacheSize: StateFlow<Long> = size
+
+    fun set(look: Look) = preferences.set(look)
+
+    fun clearCache() {
+        clearArtwork(artwork)
+        size.value = cacheSize()
+    }
+
+    fun clearStats() = library.clearStats()
+
+    private fun cacheSize() = checkNotNull(HttpResponseCache.getInstalled()).size()
+
+    companion object {
+        val Factory = viewModelFactory {
+            initializer {
+                val radio = radio()
+                SettingsViewModel(radio.preferences, radio.library, radio.artwork)
+            }
+        }
     }
 }
 
@@ -186,17 +213,20 @@ private fun Toggle(
 }
 
 @Composable
-internal fun SettingsScreen(onBack: () -> Unit, onLogs: () -> Unit) {
+internal fun SettingsScreen(
+    onBack: () -> Unit,
+    onLogs: () -> Unit,
+    model: SettingsViewModel = viewModel(factory = SettingsViewModel.Factory),
+) {
     val context = LocalContext.current
-    val look by remember { Looks.flow(context) }.collectAsStateWithLifecycle()
-    val set = { next: Look -> Looks.set(context, next) }
+    val look by model.look.collectAsStateWithLifecycle()
+    val cacheSize by model.cacheSize.collectAsStateWithLifecycle()
+    val set = model::set
     val uri = LocalUriHandler.current
     val version = remember {
         context.packageManager.getPackageInfo(context.packageName, 0).versionName.orEmpty()
     }
     var asking by remember { mutableStateOf<Ask?>(null) }
-    var cleared by remember { mutableIntStateOf(0) }
-    val cacheSize = remember(cleared) { HttpResponseCache.getInstalled()?.size() ?: 0L }
     val dynamicAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     val theme = stringResource(look.theme.label)
     val buffer = stringResource(R.string.buffer_current, stringResource(look.buffer.label))
@@ -313,8 +343,7 @@ internal fun SettingsScreen(onBack: () -> Unit, onLogs: () -> Unit) {
                 listOf(
                     {
                         Action(it, stringResource(R.string.artwork_cache), used) {
-                            clearArtwork(context)
-                            cleared++
+                            model.clearCache()
                         }
                     },
                     {
@@ -400,7 +429,7 @@ internal fun SettingsScreen(onBack: () -> Unit, onLogs: () -> Unit) {
             text = { Text(stringResource(R.string.clear_stats_question)) },
             confirmButton = {
                 TextButton({
-                    clearStats(context)
+                    model.clearStats()
                     close()
                 }) { Text(stringResource(R.string.clear)) }
             },

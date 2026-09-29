@@ -1,9 +1,9 @@
 package io.github.rastr1sr.radiomonash
 
-import android.app.Application
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.Image
@@ -73,9 +73,11 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
-import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
@@ -100,13 +102,13 @@ data class PlayerState(
     val buffering: Boolean = false,
 )
 
-class PlayerViewModel(app: Application) : AndroidViewModel(app) {
+internal class Playback(context: Context) {
     private val state = MutableStateFlow(PlayerState())
     val player: StateFlow<PlayerState> = state
     private var controller: MediaController? = null
     private val future = MediaController.Builder(
-        app,
-        SessionToken(app, ComponentName(app, PlaybackService::class.java)),
+        context,
+        SessionToken(context, ComponentName(context, PlaybackService::class.java)),
     ).buildAsync()
 
     init {
@@ -117,7 +119,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             })
             controller = c
             update(c)
-        }, ContextCompat.getMainExecutor(app))
+        }, ContextCompat.getMainExecutor(context))
     }
 
     private fun update(c: MediaController) {
@@ -130,21 +132,45 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
-    val favourite: StateFlow<Boolean> = combine(state, favourites) { s, list ->
-        s.meta.fav()?.let(list::has) == true
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
-
     fun toggle() {
         controller?.run { if (state.value.playing) pause() else play() }
     }
 
+    fun release() = MediaController.releaseFuture(future)
+}
+
+internal class PlayerViewModel(
+    private val playback: Playback,
+    private val library: Library,
+    shows: Shows,
+    preferences: Preferences,
+) : ViewModel() {
+    val player: StateFlow<PlayerState> = playback.player
+    val favourite: StateFlow<Boolean> = combine(player, library.favourites) { s, list ->
+        s.meta.fav()?.let(list::has) == true
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    val sleepUntil: StateFlow<Long> = Sleep.until
+    val schedule: StateFlow<List<Show>?> = shows.list
+    val look: StateFlow<Look> = preferences.look
+
+    fun toggle() = playback.toggle()
+
     fun favourite() {
-        state.value.meta.fav()?.let { toggleFavourite(getApplication<Application>(), it) }
+        player.value.meta.fav()?.let(library::toggle)
     }
 
     fun sleep(ms: Long) = Sleep.set(ms)
 
-    override fun onCleared() = MediaController.releaseFuture(future)
+    override fun onCleared() = playback.release()
+
+    companion object {
+        val Factory = viewModelFactory {
+            initializer {
+                val radio = radio()
+                PlayerViewModel(Playback(radio), radio.library, radio.shows, radio.preferences)
+            }
+        }
+    }
 }
 
 @Composable
@@ -153,6 +179,7 @@ internal fun PlayerPage(
     saved: Boolean,
     sleepUntil: Long,
     shows: List<Show>?,
+    look: Look,
     onToggle: () -> Unit,
     onFavourite: () -> Unit,
     onSleep: (Long) -> Unit,
@@ -161,8 +188,19 @@ internal fun PlayerPage(
 ) {
     val meta = state.meta
     val failed = state.failed
+    val still = !look.animated
     val details = @Composable {
-        Details(state, saved, sleepUntil, shows, onToggle, onFavourite, onSleep, onChat)
+        Details(
+            state,
+            saved,
+            sleepUntil,
+            shows,
+            look.equaliser,
+            onToggle,
+            onFavourite,
+            onSleep,
+            onChat,
+        )
     }
     val window = currentWindowAdaptiveInfoV2().windowSizeClass
     val wide = !window.isHeightAtLeastBreakpoint(WindowSizeClass.HEIGHT_DP_MEDIUM_LOWER_BOUND) ||
@@ -175,7 +213,12 @@ internal fun PlayerPage(
                 horizontalArrangement = Arrangement.spacedBy(Spacing.xl),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Artwork(meta, Modifier.fillMaxHeight().aspectRatio(1f, true).then(cover), failed)
+                Artwork(
+                    meta,
+                    Modifier.fillMaxHeight().aspectRatio(1f, true).then(cover),
+                    failed,
+                    still,
+                )
                 Box(Modifier.weight(1f, fill = false).widthIn(max = 480.dp)) { details() }
             }
         } else {
@@ -184,7 +227,12 @@ internal fun PlayerPage(
                 verticalArrangement = Arrangement.spacedBy(Spacing.lg),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Artwork(meta, Modifier.weight(1f, fill = false).aspectRatio(1f).then(cover), failed)
+                Artwork(
+                    meta,
+                    Modifier.weight(1f, fill = false).aspectRatio(1f).then(cover),
+                    failed,
+                    still,
+                )
                 details()
             }
         }
@@ -198,6 +246,7 @@ private fun Details(
     saved: Boolean,
     sleepUntil: Long,
     shows: List<Show>?,
+    equaliser: Boolean,
     onToggle: () -> Unit,
     onFavourite: () -> Unit,
     onSleep: (Long) -> Unit,
@@ -207,8 +256,6 @@ private fun Details(
     val playing = state.playing
     val failed = state.failed
     val enabled = state.ready
-    val context = LocalContext.current
-    val equaliser = remember { Looks.flow(context) }.collectAsStateWithLifecycle().value.equaliser
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         val mode = meta.extras?.getString("mode")?.let(AirMode::valueOf)
         val show = meta.isShow
@@ -534,5 +581,5 @@ private fun PlayerPreview() {
         .setStation("Melbourne Music Scene")
         .build()
     val state = PlayerState(meta, playing = true, ready = true)
-    LemonScentedTheme { PlayerPage(state, false, 0, null, {}, {}, {}, {}) }
+    LemonScentedTheme { PlayerPage(state, false, 0, null, Look(), {}, {}, {}, {}) }
 }

@@ -1,7 +1,6 @@
 package io.github.rastr1sr.radiomonash
 
 import android.Manifest
-import android.app.Application
 import android.content.Context
 import android.os.Build
 import android.text.format.DateFormat
@@ -58,10 +57,12 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import java.io.File
 import java.io.IOException
 import java.net.URLEncoder
@@ -89,19 +90,19 @@ internal class Show(
     val description: String?,
 )
 
-internal object Shows {
+internal class Shows(private val context: Context, private val reminders: Reminders) {
     private val shows = MutableStateFlow<List<Show>?>(null)
     val list: StateFlow<List<Show>?> = shows
     private var fetchedAt = Instant.EPOCH
 
-    fun load(context: Context, force: Boolean): List<Show>? {
+    fun load(force: Boolean): List<Show>? {
         val file = File(context.filesDir, "schedule.json")
         if (shows.value == null) shows.value = saved(file)
         if (force || shows.value == null || Instant.now() > fetchedAt.plusSeconds(600)) {
             schedule(ZoneId.systemDefault(), file)?.let {
                 shows.value = it
                 fetchedAt = Instant.now()
-                remindFollowed(context, it)
+                reminders.remindFollowed(it)
             }
         }
         return shows.value
@@ -113,28 +114,26 @@ internal fun List<Show>.current(now: Instant = Instant.now()) = firstOrNull {
         now < it.end
 }
 
-class ScheduleViewModel(private val app: Application) : AndroidViewModel(app) {
+internal class ScheduleViewModel(private val source: Shows, private val reminders: Reminders) :
+    ViewModel() {
     private val attempts = MutableStateFlow(0)
     private val refreshing = MutableStateFlow(false)
-    private val remindedIds = MutableStateFlow(reminders(app))
-    private val followedTitles = MutableStateFlow(follows(app))
     val isRefreshing: StateFlow<Boolean> = refreshing
-    val reminded: StateFlow<Set<String>> = remindedIds
-    val followed: StateFlow<Set<String>> = followedTitles
+    val reminded: StateFlow<Set<String>> = reminders.reminded
+    val followed: StateFlow<Set<String>> = reminders.followed
 
     internal val shows: StateFlow<Load<List<Show>>> = attempts.flatMapLatest { attempt ->
         var force = attempt > 0
         poll(60_000) {
-            Shows.load(app, force).also {
+            source.load(force).also {
                 force = false
                 refreshing.value = false
-                remindedIds.value = reminders(app)
             }
         }
     }.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5_000),
-        Shows.list.value?.let { Load.Ready(it) } ?: Load.Loading,
+        source.list.value?.let { Load.Ready(it) } ?: Load.Loading,
     )
 
     fun refresh() {
@@ -142,23 +141,17 @@ class ScheduleViewModel(private val app: Application) : AndroidViewModel(app) {
         attempts.value++
     }
 
-    internal fun toggleReminder(show: Show) {
-        if (show.id in remindedIds.value) {
-            forget(app, show.id)
-        } else {
-            remind(app, show.id, show.start.toEpochMilli(), show.title)
-        }
-        remindedIds.value = reminders(app)
-    }
+    fun toggleReminder(show: Show) = reminders.toggleReminder(show)
 
-    internal fun toggleFollow(show: Show, shows: List<Show>) {
-        if (show.title in followedTitles.value) {
-            unfollow(app, show.title, shows)
-        } else {
-            follow(app, show.title, shows)
+    fun toggleFollow(show: Show, shows: List<Show>) = reminders.toggleFollow(show, shows)
+
+    companion object {
+        val Factory = viewModelFactory {
+            initializer {
+                val radio = radio()
+                ScheduleViewModel(radio.shows, radio.reminders)
+            }
         }
-        followedTitles.value = follows(app)
-        remindedIds.value = reminders(app)
     }
 }
 
@@ -210,7 +203,10 @@ internal fun parseSchedule(text: String): List<Show> {
 }
 
 @Composable
-fun Schedule(modifier: Modifier = Modifier, model: ScheduleViewModel = viewModel()) {
+internal fun Schedule(
+    modifier: Modifier = Modifier,
+    model: ScheduleViewModel = viewModel(factory = ScheduleViewModel.Factory),
+) {
     val load by model.shows.collectAsStateWithLifecycle()
     val refreshing by model.isRefreshing.collectAsStateWithLifecycle()
     val reminded by model.reminded.collectAsStateWithLifecycle()

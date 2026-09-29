@@ -99,16 +99,16 @@ internal object Spacing {
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
-        installCache(this)
-        loadFavourites(this)
+        val radio = radio()
         lifecycleScope.launch(Dispatchers.IO) {
-            Shows.load(applicationContext, force = false)
+            radio.shows.load(force = false)
             Recent.load()
         }
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         setContent {
-            LemonScentedTheme {
+            val look by radio.preferences.look.collectAsStateWithLifecycle()
+            LemonScentedTheme(look) {
                 Radio()
             }
         }
@@ -152,7 +152,7 @@ private sealed class Tab(val label: Int, val icon: Int, val selected: Int) : Nav
 private val tabs = listOf(Tab.Player, Tab.Schedule, Tab.Recent, Tab.You)
 
 @Composable
-private fun Radio(model: PlayerViewModel = viewModel()) {
+private fun Radio(model: PlayerViewModel = viewModel(factory = PlayerViewModel.Factory)) {
     val state by model.player.collectAsStateWithLifecycle()
     val screens = rememberNavBackStack(Screen.Home)
     val pop: () -> Unit = { screens.removeAt(screens.lastIndex) }
@@ -177,13 +177,15 @@ private fun Radio(model: PlayerViewModel = viewModel()) {
             entry<Screen.Home> {
                 Home(onSettings = { screens.add(Screen.Settings) }) {
                     val saved by model.favourite.collectAsStateWithLifecycle()
-                    val sleepUntil by Sleep.until.collectAsStateWithLifecycle()
-                    val shows by Shows.list.collectAsStateWithLifecycle()
+                    val sleepUntil by model.sleepUntil.collectAsStateWithLifecycle()
+                    val shows by model.schedule.collectAsStateWithLifecycle()
+                    val look by model.look.collectAsStateWithLifecycle()
                     PlayerPage(
                         state,
                         saved,
                         sleepUntil,
                         shows,
+                        look,
                         onToggle = model::toggle,
                         onFavourite = model::favourite,
                         onSleep = model::sleep,
@@ -336,9 +338,8 @@ fun Loading(modifier: Modifier = Modifier) {
 }
 
 @Composable
-internal fun LemonScentedTheme(content: @Composable () -> Unit) {
+internal fun LemonScentedTheme(look: Look = Look(), content: @Composable () -> Unit) {
     val context = LocalContext.current
-    val look by remember { Looks.flow(context) }.collectAsStateWithLifecycle()
     val dark = when (look.theme) {
         Theme.System -> isSystemInDarkTheme()
         Theme.Light -> false

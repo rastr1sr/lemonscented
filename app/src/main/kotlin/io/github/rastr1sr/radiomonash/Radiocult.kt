@@ -1,6 +1,5 @@
 package io.github.rastr1sr.radiomonash
 
-import android.content.Context
 import android.graphics.BitmapFactory
 import android.net.http.HttpResponseCache
 import android.util.LruCache
@@ -58,14 +57,14 @@ fun bitmap(url: String): ImageBitmap? = cachedBitmap(url) ?: try {
     null
 }
 
-fun installCache(context: Context) {
-    HttpResponseCache.install(File(context.cacheDir, "http"), 20L shl 20)
+fun installCache(dir: File) {
+    HttpResponseCache.install(dir, 20L shl 20)
 }
 
-fun clearArtwork(context: Context) {
+fun clearArtwork(dir: File) {
     bitmaps.evictAll()
-    HttpResponseCache.getInstalled()?.delete()
-    installCache(context)
+    checkNotNull(HttpResponseCache.getInstalled()).delete()
+    installCache(dir)
 }
 
 fun sameTrack(icy: String, title: String?) = title != null && icy.contains(title, ignoreCase = true)

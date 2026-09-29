@@ -1,6 +1,5 @@
 package io.github.rastr1sr.radiomonash
 
-import android.app.Application
 import android.graphics.BitmapFactory
 import android.graphics.ImageDecoder
 import android.graphics.drawable.Animatable
@@ -71,9 +70,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.media3.common.MediaMetadata
 import com.materialkolor.hct.Hct
 import java.io.IOException
@@ -105,60 +106,64 @@ private sealed interface Entry {
     }
 }
 
-class ChatViewModel(private val app: Application) : AndroidViewModel(app) {
-    internal val messages: StateFlow<List<Message>> = Chat.messages
-    internal val errors: SharedFlow<ChatError> = Chat.errors
-    val connected: StateFlow<Boolean> = Chat.connected
-    private val nameState = MutableStateFlow(Chat.name(app))
-    private val blockedState = MutableStateFlow(Chat.blocked(app))
-    private val seenState = MutableStateFlow(Chat.lastSeen(app))
+internal class ChatViewModel(private val chat: Chat) : ViewModel() {
+    internal val messages: StateFlow<List<Message>> = chat.messages
+    internal val errors: SharedFlow<ChatError> = chat.errors
+    val connected: StateFlow<Boolean> = chat.connected
+    private val nameState = MutableStateFlow(chat.name())
+    private val blockedState = MutableStateFlow(chat.blocked())
+    private val seenState = MutableStateFlow(chat.lastSeen())
     val name: StateFlow<String?> = nameState
     val blocked: StateFlow<Map<String, String>> = blockedState
     val seen: StateFlow<Long> = seenState
 
     fun open() {
-        seenState.value = Chat.lastSeen(app)
-        Chat.open()
+        seenState.value = chat.lastSeen()
+        chat.open()
     }
 
     fun close() {
-        Chat.seen(app)
-        Chat.close()
+        chat.seen()
+        chat.close()
     }
 
-    fun userId() = Chat.userId(app)
+    fun userId() = chat.userId()
 
-    fun send(text: String) = Chat.send(app, text)
+    fun send(text: String) = chat.send(text)
 
-    fun rename(name: String, done: (String?) -> Unit) = Chat.setName(app, name) {
-        if (it == null) nameState.value = Chat.name(app)
+    fun rename(name: String, done: (String?) -> Unit) = chat.setName(name) {
+        if (it == null) nameState.value = chat.name()
         done(it)
     }
 
-    fun loadOlder() = Chat.loadOlder()
+    fun loadOlder() = chat.loadOlder()
 
-    internal fun report(message: Message) = Chat.report(message)
+    internal fun report(message: Message) = chat.report(message)
 
     internal fun block(message: Message) {
-        Chat.block(app, message)
-        blockedState.value = Chat.blocked(app)
+        chat.block(message)
+        blockedState.value = chat.blocked()
     }
 
     fun unblock(userId: String) {
-        Chat.unblock(app, userId)
-        blockedState.value = Chat.blocked(app)
+        chat.unblock(userId)
+        blockedState.value = chat.blocked()
+    }
+
+    companion object {
+        val Factory = viewModelFactory { initializer { ChatViewModel(radio().chat) } }
     }
 }
 
 @Composable
-fun ChatScreen(
+internal fun ChatScreen(
     meta: MediaMetadata,
     playing: Boolean,
     enabled: Boolean,
     onToggle: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
-    model: ChatViewModel = viewModel(),
+    model: ChatViewModel = viewModel(factory = ChatViewModel.Factory),
 ) {
     DisposableEffect(model) {
         model.open()

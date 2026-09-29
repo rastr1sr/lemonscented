@@ -9,76 +9,97 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import androidx.core.content.edit
-
-private fun prefs(context: Context) =
-    context.getSharedPreferences("reminders", Context.MODE_PRIVATE)
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 
 internal fun decodeReminder(value: String): Pair<Long, String>? {
     val start = value.substringBefore('|').toLongOrNull() ?: return null
     return start to value.substringAfter('|')
 }
 
-fun reminders(context: Context): Set<String> = prefs(context).all.keys
+internal class Reminders(private val context: Context) {
+    private val prefs = context.getSharedPreferences("reminders", Context.MODE_PRIVATE)
+    private val followPrefs = context.getSharedPreferences("follows", Context.MODE_PRIVATE)
+    private val alarms = context.getSystemService(AlarmManager::class.java)
+    private val remindedIds = MutableStateFlow(prefs.all.keys.toSet())
+    private val followedTitles = MutableStateFlow(followPrefs.all.keys.toSet())
+    val reminded: StateFlow<Set<String>> = remindedIds
+    val followed: StateFlow<Set<String>> = followedTitles
 
-private fun followPrefs(context: Context) =
-    context.getSharedPreferences("follows", Context.MODE_PRIVATE)
+    fun toggleReminder(show: Show) {
+        if (show.id in remindedIds.value) {
+            forget(show.id)
+        } else {
+            remind(show.id, show.start.toEpochMilli(), show.title)
+        }
+    }
 
-fun follows(context: Context): Set<String> = followPrefs(context).all.keys
+    fun toggleFollow(show: Show, shows: List<Show>) {
+        if (show.title in followedTitles.value) {
+            followPrefs.edit { remove(show.title) }
+            shows.filter { it.title == show.title }.forEach { forget(it.id) }
+        } else {
+            followPrefs.edit { putBoolean(show.title, true) }
+        }
+        followedTitles.value = followPrefs.all.keys.toSet()
+        remindFollowed(shows)
+    }
 
-internal fun follow(context: Context, title: String, shows: List<Show>) {
-    followPrefs(context).edit { putBoolean(title, true) }
-    remindFollowed(context, shows)
-}
+    fun remindFollowed(shows: List<Show>) {
+        val now = System.currentTimeMillis()
+        shows.filter {
+            it.title in followedTitles.value && it.id !in remindedIds.value &&
+                it.start.toEpochMilli() > now
+        }.forEach { remind(it.id, it.start.toEpochMilli(), it.title) }
+    }
 
-internal fun unfollow(context: Context, title: String, shows: List<Show>) {
-    followPrefs(context).edit { remove(title) }
-    shows.filter { it.title == title }.forEach { forget(context, it.id) }
-}
+    fun rearm() {
+        prefs.all.forEach { (id, value) ->
+            val (start, title) = decodeReminder(value.toString()) ?: return@forEach
+            if (start > System.currentTimeMillis()) arm(id, start, title) else forget(id)
+        }
+    }
 
-internal fun remindFollowed(context: Context, shows: List<Show>) {
-    val titles = follows(context)
-    val set = reminders(context)
-    val now = System.currentTimeMillis()
-    shows.filter { it.title in titles && it.id !in set && it.start.toEpochMilli() > now }
-        .forEach { remind(context, it.id, it.start.toEpochMilli(), it.title) }
-}
+    fun fired(id: String) {
+        prefs.edit { remove(id) }
+        remindedIds.value = prefs.all.keys.toSet()
+    }
 
-fun remind(context: Context, id: String, start: Long, title: String) {
-    prefs(context).edit { putString(id, "$start|$title") }
-    arm(context, id, start, title)
-}
+    private fun remind(id: String, start: Long, title: String) {
+        prefs.edit { putString(id, "$start|$title") }
+        arm(id, start, title)
+        remindedIds.value = prefs.all.keys.toSet()
+    }
 
-fun forget(context: Context, id: String) {
-    prefs(context).edit { remove(id) }
-    context.getSystemService(AlarmManager::class.java).cancel(alarm(context, id, ""))
-}
+    private fun forget(id: String) {
+        prefs.edit { remove(id) }
+        alarms.cancel(alarm(id, ""))
+        remindedIds.value = prefs.all.keys.toSet()
+    }
 
-private fun arm(context: Context, id: String, start: Long, title: String) {
-    val alarms = context.getSystemService(AlarmManager::class.java)
-    alarms.setWindow(AlarmManager.RTC_WAKEUP, start, 5 * 60_000L, alarm(context, id, title))
-}
+    private fun arm(id: String, start: Long, title: String) {
+        alarms.setWindow(AlarmManager.RTC_WAKEUP, start, 5 * 60_000L, alarm(id, title))
+    }
 
-private fun alarm(context: Context, id: String, title: String): PendingIntent {
-    val intent = Intent(context, ReminderReceiver::class.java)
-        .putExtra("id", id)
-        .putExtra("title", title)
-    val flags = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-    return PendingIntent.getBroadcast(context, id.hashCode(), intent, flags)
+    private fun alarm(id: String, title: String): PendingIntent {
+        val intent = Intent(context, ReminderReceiver::class.java)
+            .putExtra("id", id)
+            .putExtra("title", title)
+        val flags = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        return PendingIntent.getBroadcast(context, id.hashCode(), intent, flags)
+    }
 }
 
 class ReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        val reminders = context.radio().reminders
         if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
-            prefs(context).all.forEach { (id, value) ->
-                val (start, title) = decodeReminder(value.toString()) ?: return@forEach
-                val now = System.currentTimeMillis()
-                if (start > now) arm(context, id, start, title) else forget(context, id)
-            }
+            reminders.rearm()
             return
         }
         val id = intent.getStringExtra("id") ?: return
         val title = intent.getStringExtra("title").orEmpty()
-        prefs(context).edit { remove(id) }
+        reminders.fired(id)
         val manager = context.getSystemService(NotificationManager::class.java)
         if (!manager.areNotificationsEnabled()) return
         val channel = context.getString(R.string.reminder_channel)

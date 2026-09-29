@@ -71,7 +71,9 @@ internal fun parseMessages(array: JSONArray?): List<Message> {
 
 internal enum class ChatError { Load, Send }
 
-internal object Chat {
+internal class Chat(context: Context) {
+    private val prefs = context.getSharedPreferences("chat", Context.MODE_PRIVATE)
+
     private val list = MutableStateFlow<List<Message>>(emptyList())
     private val online = MutableStateFlow(false)
     private val more = MutableStateFlow(true)
@@ -85,34 +87,31 @@ internal object Chat {
     private var socket: WebSocket? = null
     private var open = false
 
-    private fun prefs(context: Context) = context.getSharedPreferences("chat", Context.MODE_PRIVATE)
+    fun userId() = prefs.getString("id", null)
 
-    fun userId(context: Context) = prefs(context).getString("id", null)
+    fun name() = prefs.getString("name", null)
 
-    fun name(context: Context) = prefs(context).getString("name", null)
+    fun blocked(): Map<String, String> = prefs.getStringSet("blocked", emptySet()).orEmpty()
+        .associate { it.substringBefore('|') to it.substringAfter('|') }
 
-    fun blocked(context: Context): Map<String, String> =
-        prefs(context).getStringSet("blocked", emptySet()).orEmpty()
-            .associate { it.substringBefore('|') to it.substringAfter('|') }
-
-    fun block(context: Context, message: Message) {
+    fun block(message: Message) {
         val set =
-            prefs(context).getStringSet("blocked", emptySet()).orEmpty() +
+            prefs.getStringSet("blocked", emptySet()).orEmpty() +
                 "${message.userId}|${message.name}"
-        prefs(context).edit { putStringSet("blocked", set) }
+        prefs.edit { putStringSet("blocked", set) }
     }
 
-    fun unblock(context: Context, userId: String) {
-        val set = prefs(context).getStringSet("blocked", emptySet()).orEmpty().filterNot {
+    fun unblock(userId: String) {
+        val set = prefs.getStringSet("blocked", emptySet()).orEmpty().filterNot {
             it.startsWith("$userId|")
         }
-        prefs(context).edit { putStringSet("blocked", set.toSet()) }
+        prefs.edit { putStringSet("blocked", set.toSet()) }
     }
 
-    fun lastSeen(context: Context) = prefs(context).getLong("seen", 0)
+    fun lastSeen() = prefs.getLong("seen", 0)
 
-    fun seen(context: Context) {
-        list.value.lastOrNull()?.let { last -> prefs(context).edit { putLong("seen", last.at) } }
+    fun seen() {
+        list.value.lastOrNull()?.let { last -> prefs.edit { putLong("seen", last.at) } }
     }
 
     fun open() {
@@ -169,9 +168,9 @@ internal object Chat {
         }
     }
 
-    fun setName(context: Context, name: String, done: (String?) -> Unit) {
-        val id = userId(context)
-        val old = name(context)
+    fun setName(name: String, done: (String?) -> Unit) {
+        val id = userId()
+        val old = this.name()
         thread {
             val result = runCatching {
                 val reply = if (id == null) {
@@ -188,7 +187,7 @@ internal object Chat {
             }
             main.post {
                 result.onSuccess { (newId, newName) ->
-                    prefs(context).edit {
+                    prefs.edit {
                         putString("id", newId)
                         putString("name", newName)
                     }
@@ -196,14 +195,14 @@ internal object Chat {
                         null -> "$newName joined the chat"
                         else -> "$old changed their name to $newName"
                     }
-                    emit(context, if (old == null) "user_joined" else "user_name_change", notice)
+                    emit(if (old == null) "user_joined" else "user_name_change", notice)
                     done(null)
                 }.onFailure { done(it.message) }
             }
         }
     }
 
-    fun send(context: Context, text: String) = emit(context, "message", text)
+    fun send(text: String) = emit("message", text)
 
     fun report(message: Message) {
         list.update { all -> all.filterNot { it.id == message.id } }
@@ -220,9 +219,9 @@ internal object Chat {
         }
     }
 
-    private fun emit(context: Context, type: String, text: String) {
-        val id = userId(context) ?: return
-        val name = name(context) ?: return
+    private fun emit(type: String, text: String) {
+        val id = userId() ?: return
+        val name = name() ?: return
         val json = JSONObject()
             .put("station", STATION)
             .put("id", UUID.randomUUID().toString())

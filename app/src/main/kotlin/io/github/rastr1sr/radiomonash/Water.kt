@@ -29,9 +29,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onVisibilityChanged
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.materialkolor.hct.Hct
 import kotlin.math.cos
 import kotlin.math.sin
@@ -82,9 +80,6 @@ half4 main(float2 p) {
 
 @Composable
 internal fun Lemon(show: Boolean, modifier: Modifier = Modifier, still: Boolean = false) {
-    val context = LocalContext.current
-    val look by remember { Looks.flow(context) }.collectAsStateWithLifecycle()
-    val still = still || !look.animated
     val scheme = MaterialTheme.colorScheme
     val slice = @Composable { tint: Color ->
         Icon(

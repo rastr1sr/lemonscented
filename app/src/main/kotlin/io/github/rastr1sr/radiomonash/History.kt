@@ -31,7 +31,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -41,6 +40,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import java.io.IOException
 import java.time.Instant
 import java.time.ZoneId
@@ -85,7 +86,7 @@ internal object Recent {
     }?.also { songs.value = it } ?: songs.value
 }
 
-class HistoryViewModel : ViewModel() {
+internal class HistoryViewModel(private val library: Library) : ViewModel() {
     private val attempts = MutableStateFlow(0)
     private val refreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = refreshing
@@ -98,21 +99,29 @@ class HistoryViewModel : ViewModel() {
         Recent.list.value?.let { Load.Ready(it) } ?: Load.Loading,
     )
 
+    val favourites: StateFlow<List<Fav>> = library.favourites
+
     fun refresh() {
         refreshing.value = true
         attempts.value++
     }
+
+    fun favourite(fav: Fav) = library.toggle(fav)
+
+    companion object {
+        val Factory = viewModelFactory { initializer { HistoryViewModel(radio().library) } }
+    }
 }
 
 @Composable
-fun History(modifier: Modifier = Modifier, model: HistoryViewModel = viewModel()) {
-    val context = LocalContext.current
+internal fun History(
+    modifier: Modifier = Modifier,
+    model: HistoryViewModel = viewModel(factory = HistoryViewModel.Factory),
+) {
     val load by model.songs.collectAsStateWithLifecycle()
     val refreshing by model.isRefreshing.collectAsStateWithLifecycle()
-    val favs by favourites.collectAsStateWithLifecycle()
-    HistoryContent(load, refreshing, favs, model::refresh, {
-        toggleFavourite(context, it)
-    }, modifier)
+    val favs by model.favourites.collectAsStateWithLifecycle()
+    HistoryContent(load, refreshing, favs, model::refresh, model::favourite, modifier)
 }
 
 @Composable

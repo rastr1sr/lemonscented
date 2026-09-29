@@ -64,7 +64,8 @@ class PlaybackService : MediaSessionService() {
     @OptIn(UnstableApi::class)
     override fun onCreate() {
         super.onCreate()
-        val prefs = Looks.flow(this).value
+        val radio = radio()
+        val prefs = radio.preferences.look.value
         val renderers = object : DefaultRenderersFactory(this) {
             override fun buildAudioSink(
                 context: Context,
@@ -121,7 +122,7 @@ class PlaybackService : MediaSessionService() {
         })
         refresh(player, null)
         scope.launch {
-            Looks.flow(this@PlaybackService).drop(1).collect { next ->
+            radio.preferences.look.drop(1).collect { next ->
                 player.setHandleAudioBecomingNoisy(next.noisy)
                 val url = next.stream ?: STREAM
                 if (player.currentMediaItem?.localConfiguration?.uri?.toString() == url) {
@@ -158,7 +159,7 @@ class PlaybackService : MediaSessionService() {
 
     private fun flush() {
         if (since == 0L) return
-        addListening(this, (SystemClock.elapsedRealtime() - since) / 1000)
+        radio().library.addListening((SystemClock.elapsedRealtime() - since) / 1000)
         since = 0L
     }
 
@@ -169,7 +170,7 @@ class PlaybackService : MediaSessionService() {
             ContextCompat.getMainExecutor(this).execute {
                 if (id != request) return@execute
                 if (icy != null && player.isPlaying) {
-                    logPlay(this, info.artist?.toString(), info.station?.toString())
+                    radio().library.logPlay(info.artist?.toString(), info.station?.toString())
                 }
                 val item = player.getMediaItemAt(0)
                 player.replaceMediaItem(0, item.buildUpon().setMediaMetadata(info).build())

@@ -1,6 +1,5 @@
 package io.github.rastr1sr.radiomonash
 
-import android.app.Application
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -29,7 +28,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -38,25 +36,36 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 
-class YouViewModel(app: Application) : AndroidViewModel(app) {
-    internal val stats: StateFlow<Load<Stats>> = poll(60_000) { readStats(app) }
+internal class YouViewModel(private val library: Library) : ViewModel() {
+    val stats: StateFlow<Load<Stats>> = poll(60_000) { library.readStats() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), Load.Loading)
+    val favourites: StateFlow<List<Fav>> = library.favourites
+
+    fun remove(fav: Fav) = library.toggle(fav)
+
+    companion object {
+        val Factory = viewModelFactory { initializer { YouViewModel(radio().library) } }
+    }
 }
 
 @Composable
-fun You(modifier: Modifier = Modifier, model: YouViewModel = viewModel()) {
-    val context = LocalContext.current
+internal fun You(
+    modifier: Modifier = Modifier,
+    model: YouViewModel = viewModel(factory = YouViewModel.Factory),
+) {
     val load by model.stats.collectAsStateWithLifecycle()
-    val favs by favourites.collectAsStateWithLifecycle()
-    YouContent((load as? Load.Ready)?.value, favs, { toggleFavourite(context, it) }, modifier)
+    val favs by model.favourites.collectAsStateWithLifecycle()
+    YouContent((load as? Load.Ready)?.value, favs, model::remove, modifier)
 }
 
 @Composable

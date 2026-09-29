@@ -42,19 +42,15 @@ private fun playLog(context: Context) = File(context.filesDir, "plays.jsonl")
 
 fun loadFavourites(context: Context) {
     if (favs.value.isNotEmpty()) return
-    favs.value = favPrefs(context).all.values.mapNotNull { value ->
-        try {
-            val json = JSONObject(value.toString())
-            Fav(
-                json.getString("title"),
-                json.str("artist"),
-                json.str("art"),
-                json.optBoolean("show"),
-                json.getLong("at"),
-            )
-        } catch (e: JSONException) {
-            null
-        }
+    favs.value = favPrefs(context).all.values.map { value ->
+        val json = JSONObject(value.toString())
+        Fav(
+            json.getString("title"),
+            json.str("artist"),
+            json.str("art"),
+            json.optBoolean("show"),
+            json.getLong("at"),
+        )
     }.sortedByDescending { it.at }
 }
 
@@ -92,23 +88,18 @@ fun logPlay(context: Context, artist: String?, show: String?) {
     try {
         playLog(context).appendText(line + "\n")
     } catch (e: IOException) {
-        return
+        Logs.add("Storage", "Play log: ${e.message}")
     }
 }
 
 internal fun readStats(context: Context): Stats {
-    val days = listenPrefs(context).all.mapNotNull { (day, seconds) ->
-        (seconds as? Long)?.let { LocalDate.parse(day) to it }
+    val days = listenPrefs(context).all.map { (day, seconds) ->
+        LocalDate.parse(day) to seconds as Long
     }.toMap()
-    val plays = try {
-        playLog(context).readLines().mapNotNull {
-            try {
-                JSONObject(it).run { Play(str("artist"), str("show")) }
-            } catch (e: JSONException) {
-                null
-            }
-        }
-    } catch (e: IOException) {
+    val log = playLog(context)
+    val plays = if (log.exists()) {
+        log.readLines().map { JSONObject(it).run { Play(str("artist"), str("show")) } }
+    } else {
         emptyList()
     }
     return stats(days, plays, LocalDate.now())

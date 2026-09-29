@@ -119,17 +119,19 @@ internal object Chat {
         if (open) return
         open = true
         thread {
-            val history =
-                runCatching {
-                    parseMessages(
-                        JSONObject(request("$API/messages/$STATION")).optJSONArray("messages"),
-                    )
-                }
+            val history = try {
+                parseMessages(
+                    JSONObject(request("$API/messages/$STATION")).optJSONArray("messages"),
+                )
+            } catch (e: IOException) {
+                Logs.add("Chat", "History: ${e.message}")
+                null
+            } catch (e: JSONException) {
+                Logs.add("Chat", "History: ${e.message}")
+                null
+            }
             main.post {
-                history.onSuccess { merge(it) }.onFailure {
-                    Logs.add("Chat", "History: ${it.message}")
-                    problems.tryEmit(ChatError.Load)
-                }
+                if (history == null) problems.tryEmit(ChatError.Load) else merge(history)
                 connect()
             }
         }
@@ -147,16 +149,22 @@ internal object Chat {
         if (!more.value) return
         more.value = false
         thread {
-            val page = runCatching {
+            val page = try {
                 parseMessages(
                     JSONObject(
                         request("$API/messages/$STATION?fromTime=$first"),
                     ).optJSONArray("messages"),
                 )
-            }.getOrNull()
+            } catch (e: IOException) {
+                Logs.add("Chat", "Older messages: ${e.message}")
+                null
+            } catch (e: JSONException) {
+                Logs.add("Chat", "Older messages: ${e.message}")
+                null
+            }
             main.post {
                 if (page != null) merge(page)
-                more.value = !page.isNullOrEmpty()
+                more.value = page == null || page.isNotEmpty()
             }
         }
     }
@@ -200,12 +208,14 @@ internal object Chat {
     fun report(message: Message) {
         list.update { all -> all.filterNot { it.id == message.id } }
         thread {
-            runCatching {
+            try {
                 request(
                     "$API/messages/$STATION/flag",
                     "POST",
                     JSONObject().put("createdAt", message.at),
                 )
+            } catch (e: IOException) {
+                Logs.add("Chat", "Report: ${e.message}")
             }
         }
     }
@@ -272,7 +282,12 @@ internal object Chat {
     }
 
     private fun event(payload: String) {
-        val array = runCatching { JSONArray(payload) }.getOrNull() ?: return
+        val array = try {
+            JSONArray(payload)
+        } catch (e: JSONException) {
+            Logs.add("Chat", "Unreadable event: ${e.message}")
+            return
+        }
         val data = array.optJSONObject(1) ?: return
         main.post {
             when (array.optString(0)) {

@@ -55,9 +55,9 @@ import org.json.JSONObject
 
 internal class Played(val title: String, val artist: String?, val at: Instant, val art: String?)
 
-internal fun parseHistory(text: String): List<Played>? = try {
+internal fun parseHistory(text: String): List<Played> {
     val list = JSONObject(text).getJSONArray("data")
-    (0 until list.length()).map(list::getJSONObject).map {
+    return (0 until list.length()).map(list::getJSONObject).map {
         Played(
             it.getString("title"),
             it.str("artist"),
@@ -65,10 +65,6 @@ internal fun parseHistory(text: String): List<Played>? = try {
             it.optJSONObject("artwork")?.str("128x128")?.takeIf(::isHttps),
         )
     }
-} catch (e: JSONException) {
-    null
-} catch (e: DateTimeParseException) {
-    null
 }
 
 internal object Recent {
@@ -78,6 +74,12 @@ internal object Recent {
     fun load(): List<Played>? = try {
         parseHistory(radiocult("streaming/history/latest-results?limit=20"))
     } catch (e: IOException) {
+        Logs.add("Network", "Recent: ${e.message}")
+        null
+    } catch (e: JSONException) {
+        Logs.add("Network", "Recent: ${e.message}")
+        null
+    } catch (e: DateTimeParseException) {
         Logs.add("Network", "Recent: ${e.message}")
         null
     }?.also { songs.value = it } ?: songs.value

@@ -2,10 +2,13 @@ package io.github.rastr1sr.radiomonash
 
 import java.time.Instant
 import java.time.LocalDate
+import java.time.format.DateTimeParseException
 import org.json.JSONArray
+import org.json.JSONException
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -18,7 +21,7 @@ class RadiocultTest {
               {"id":"a","title":"Earlier","start":"2026-09-28T01:00:00.000Z","end":"2026-09-28T03:00:00.000Z","media":{"type":"playlist"}}
             ]}
         """
-        val shows = parseSchedule(json)!!
+        val shows = parseSchedule(json)
         assertEquals(listOf("Earlier", "Later"), shows.map { it.title })
         assertEquals(Instant.parse("2026-09-28T01:00:00Z"), shows[0].start)
         assertFalse(shows[0].live)
@@ -64,8 +67,8 @@ class RadiocultTest {
     @Test
     fun rejectsBadSchedule() {
         val badDate = """{"schedules":[{"id":"a","title":"x","start":"soon","end":"later"}]}"""
-        assertEquals(null, parseSchedule(badDate))
-        assertEquals(null, parseSchedule("not json"))
+        assertThrows(DateTimeParseException::class.java) { parseSchedule(badDate) }
+        assertThrows(JSONException::class.java) { parseSchedule("not json") }
     }
 
     @Test
@@ -81,12 +84,14 @@ class RadiocultTest {
             "artwork":{"128x128":"https://cdn.example/a.jpg"}},
             {"playoutStart":"2026-09-28T00:55:00.000Z","title":"Other","artist":null,"artwork":{"128x128":"file:///x"}}]}
         """
-        val played = parseHistory(text)!!
+        val played = parseHistory(text)
         assertEquals(listOf("Song", "Other"), played.map { it.title })
         assertEquals("Band", played[0].artist)
         assertEquals(null, played[1].artist)
         assertEquals(null, played[1].art)
-        assertEquals(null, parseHistory("""{"data":[{"playoutStart":"soon","title":"x"}]}"""))
+        assertThrows(DateTimeParseException::class.java) {
+            parseHistory("""{"data":[{"playoutStart":"soon","title":"x"}]}""")
+        }
     }
 
     @Test

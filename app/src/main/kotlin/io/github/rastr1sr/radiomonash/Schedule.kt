@@ -167,16 +167,27 @@ private fun schedule(zone: ZoneId, saved: File): List<Show>? = try {
     val to = from.plus(7, ChronoUnit.DAYS)
     val tz = URLEncoder.encode(zone.id, "UTF-8")
     val text = radiocult("schedule?startDate=$from&endDate=$to&timezone=$tz")
-    parseSchedule(text)?.also { saved.writeText(text) }
+    parseSchedule(text).also { saved.writeText(text) }
 } catch (e: IOException) {
+    Logs.add("Network", "Schedule: ${e.message}")
+    null
+} catch (e: JSONException) {
+    Logs.add("Network", "Schedule: ${e.message}")
+    null
+} catch (e: DateTimeParseException) {
     Logs.add("Network", "Schedule: ${e.message}")
     null
 }
 
-private fun saved(file: File): List<Show>? = try {
-    parseSchedule(file.readText())
-} catch (e: IOException) {
+private fun saved(file: File): List<Show>? = if (!file.exists()) {
     null
+} else {
+    try {
+        parseSchedule(file.readText())
+    } catch (e: JSONException) {
+        Logs.add("Storage", "Saved schedule: ${e.message}")
+        null
+    }
 }
 
 internal fun preview(text: String): String {
@@ -184,9 +195,9 @@ internal fun preview(text: String): String {
     return if (first.length < text.length) first.trimEnd('.') + "…" else first
 }
 
-internal fun parseSchedule(text: String): List<Show>? = try {
+internal fun parseSchedule(text: String): List<Show> {
     val list = JSONObject(text).getJSONArray("schedules")
-    (0 until list.length()).map(list::getJSONObject).map {
+    return (0 until list.length()).map(list::getJSONObject).map {
         Show(
             it.getString("id"),
             it.getString("title"),
@@ -196,10 +207,6 @@ internal fun parseSchedule(text: String): List<Show>? = try {
             tipTapText(it.optJSONObject("description")),
         )
     }.sortedBy { it.start }
-} catch (e: JSONException) {
-    null
-} catch (e: DateTimeParseException) {
-    null
 }
 
 @Composable

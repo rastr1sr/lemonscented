@@ -32,9 +32,11 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -149,6 +151,7 @@ internal class ChatViewModel(private val chat: Chat) : ViewModel() {
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun ChatScreen(
     meta: MediaMetadata,
@@ -220,21 +223,39 @@ internal fun ChatScreen(
                 .wrapContentWidth()
                 .widthIn(max = 840.dp),
         ) {
-            if (!connected) {
-                LinearProgressIndicator(
-                    Modifier.fillMaxWidth().semantics { contentDescription = connecting },
+            if (messages.isEmpty() && !connected) {
+                Column(
+                    Modifier.weight(1f).fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(
+                        Spacing.md,
+                        Alignment.CenterVertically,
+                    ),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    LoadingIndicator()
+                    Text(
+                        connecting,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            } else {
+                if (!connected) {
+                    LinearProgressIndicator(
+                        Modifier.fillMaxWidth().semantics { contentDescription = connecting },
+                    )
+                }
+                Messages(
+                    remember(messages, blocked) { messages.filter { it.userId !in blocked } },
+                    myId,
+                    me,
+                    seen,
+                    onNick = { draft = "$draft@$it ".trimStart() },
+                    onAction = { report, message -> confirm = report to message },
+                    onOlder = model::loadOlder,
+                    modifier = Modifier.weight(1f),
                 )
             }
-            Messages(
-                remember(messages, blocked) { messages.filter { it.userId !in blocked } },
-                myId,
-                me,
-                seen,
-                onNick = { draft = "$draft@$it ".trimStart() },
-                onAction = { report, message -> confirm = report to message },
-                onOlder = model::loadOlder,
-                modifier = Modifier.weight(1f),
-            )
             Row(
                 Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.xs),
                 verticalAlignment = Alignment.CenterVertically,

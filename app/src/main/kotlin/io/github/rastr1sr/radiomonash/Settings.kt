@@ -25,6 +25,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.foundation.text.input.rememberTextFieldState
+import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -52,6 +56,8 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
 import androidx.lifecycle.ViewModel
@@ -189,7 +195,7 @@ private fun Toggle(
     SegmentedListItem(
         checked,
         onChange,
-        shapes = shapes.copy(selectedShape = shapes.shape),
+        shapes = shapes.flat(),
         colors = ListItemDefaults.segmentedColors(
             containerColor = scheme.surfaceContainerHigh,
             selectedContainerColor = scheme.surfaceContainerHigh,
@@ -472,37 +478,45 @@ private fun Choice(
 
 @Composable
 private fun StreamDialog(current: String?, onSave: (String?) -> Unit, onDismiss: () -> Unit) {
-    var text by remember { mutableStateOf(current ?: STREAM) }
-    val valid = isHttps(text.trim())
+    val state = rememberTextFieldState(current ?: STREAM)
+    val text = state.text.toString().trim()
+    val valid = isHttps(text)
+    val save = {
+        onSave(text.takeUnless { it == STREAM })
+        onDismiss()
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.stream_address)) },
         text = {
             OutlinedTextField(
-                text,
-                { text = it },
-                singleLine = true,
+                state,
+                Modifier.fillMaxWidth(),
                 isError = !valid,
-                supportingText = { if (!valid) Text(stringResource(R.string.stream_invalid)) },
+                trailingIcon = if (text != STREAM) {
+                    {
+                        IconButton({ state.setTextAndPlaceCursorAtEnd(STREAM) }) {
+                            Icon(
+                                painterResource(R.drawable.ic_reset),
+                                stringResource(R.string.reset),
+                            )
+                        }
+                    }
+                } else {
+                    null
+                },
+                supportingText = { Text(stringResource(R.string.stream_invalid)) },
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Uri,
+                    imeAction = ImeAction.Done,
+                ),
+                onKeyboardAction = { if (valid) save() },
+                lineLimits = TextFieldLineLimits.SingleLine,
             )
         },
         confirmButton = {
-            TextButton(
-                {
-                    onSave(text.trim().takeUnless { it == STREAM })
-                    onDismiss()
-                },
-                enabled = valid,
-            ) { Text(stringResource(R.string.save)) }
+            TextButton(save, enabled = valid) { Text(stringResource(R.string.save)) }
         },
-        dismissButton = {
-            Row {
-                TextButton({
-                    onSave(null)
-                    onDismiss()
-                }) { Text(stringResource(R.string.reset)) }
-                TextButton(onDismiss) { Text(stringResource(R.string.cancel)) }
-            }
-        },
+        dismissButton = { TextButton(onDismiss) { Text(stringResource(R.string.cancel)) } },
     )
 }

@@ -70,6 +70,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
@@ -207,6 +208,7 @@ internal fun PlayerPage(
                     Modifier.fillMaxHeight().aspectRatio(1f, true).then(cover),
                     failed,
                     still,
+                    indicator = true,
                 )
                 Box(Modifier.weight(1f, fill = false).widthIn(max = 480.dp)) { details() }
             }
@@ -221,6 +223,7 @@ internal fun PlayerPage(
                     Modifier.weight(1f, fill = false).aspectRatio(1f).then(cover),
                     failed,
                     still,
+                    indicator = true,
                 )
                 details()
             }
@@ -249,11 +252,18 @@ private fun Details(
         val mode = meta.extras?.getString("mode")?.let(AirMode::valueOf)
         val show = meta.isShow
         val artist = meta.artist?.toString()
-        SongTitle(meta, shows?.current()?.takeIf { meta.isShow && it.description != null })
+        val loading = mode == null && !failed
+        if (loading) {
+            Line(MaterialTheme.typography.titleLarge) { Placeholder(200.dp) }
+        } else {
+            SongTitle(meta, shows?.current()?.takeIf { meta.isShow && it.description != null })
+        }
         val station = meta.station?.toString()
         Spacer(Modifier.height(Spacing.xxs))
         Line(MaterialTheme.typography.bodyLarge) {
-            if (artist != null) {
+            if (loading) {
+                Placeholder(140.dp)
+            } else if (artist != null) {
                 Text(
                     artist,
                     Modifier.basicMarquee(iterations = Int.MAX_VALUE),
@@ -278,7 +288,9 @@ private fun Details(
         }
         Spacer(Modifier.height(Spacing.xxs))
         Line(MaterialTheme.typography.labelLarge) {
-            if (failed) {
+            if (loading) {
+                Placeholder(96.dp)
+            } else if (failed) {
                 Text(
                     stringResource(R.string.stream_failed),
                     color = MaterialTheme.colorScheme.error,
@@ -360,7 +372,7 @@ private fun SongTitle(meta: MediaMetadata, show: Show?) {
     if (!info) return
     Sheet({ info = false }) { close ->
         if (title != null && artist != null) {
-            SongInfo(meta, title, artist, close)
+            SongInfo(title, artist, meta.artworkUri?.toString(), meta.station?.toString(), close)
         } else if (show != null) {
             ShowInfo(meta, show)
         }
@@ -400,9 +412,16 @@ private fun ShowInfo(meta: MediaMetadata, show: Show) {
 }
 
 @Composable
-private fun SongInfo(meta: MediaMetadata, title: String, artist: String, close: () -> Unit) {
+internal fun SongInfo(
+    title: String,
+    artist: String?,
+    art: String?,
+    station: String?,
+    close: () -> Unit,
+) {
     val context = LocalContext.current
-    val query = Uri.encode("$title $artist")
+    val parts = listOfNotNull(title, artist)
+    val query = Uri.encode(parts.joinToString(" "))
     val clear = ListItemDefaults.colors(containerColor = Color.Transparent)
     val open = { url: String ->
         close()
@@ -410,15 +429,10 @@ private fun SongInfo(meta: MediaMetadata, title: String, artist: String, close: 
     }
     Column(Modifier.padding(bottom = Spacing.md)) {
         ListItem(
-            supportingContent = { Text(artist) },
-            overlineContent = meta.station?.let { { Text(it.toString()) } },
+            supportingContent = artist?.let { { Text(it) } },
+            overlineContent = station?.let { { Text(it) } },
             leadingContent = {
-                Cover(
-                    meta.artworkUri?.toString(),
-                    Modifier.size(56.dp).clip(MaterialTheme.shapes.small),
-                ) {
-                    Question()
-                }
+                Cover(art, Modifier.size(56.dp).clip(MaterialTheme.shapes.small))
             },
             colors = clear,
         ) { Text(title) }
@@ -432,7 +446,7 @@ private fun SongInfo(meta: MediaMetadata, title: String, artist: String, close: 
         ListItem(
             {
                 context.getSystemService(ClipboardManager::class.java)
-                    .setPrimaryClip(ClipData.newPlainText(title, "$title - $artist"))
+                    .setPrimaryClip(ClipData.newPlainText(title, parts.joinToString(" - ")))
                 close()
             },
             colors = clear,
@@ -509,11 +523,12 @@ internal fun Artwork(
     modifier: Modifier = Modifier,
     failed: Boolean = false,
     still: Boolean = false,
+    indicator: Boolean = false,
 ) {
     when {
-        failed -> Cover(null, modifier) { Question() }
+        failed -> Cover(null, modifier)
         meta.isShow || meta.title == null -> Lemon(meta.isShow, modifier, still)
-        else -> Cover(meta.artworkUri?.toString(), modifier) { Question() }
+        else -> Cover(meta.artworkUri?.toString(), modifier, indicator)
     }
 }
 
@@ -527,11 +542,13 @@ internal fun Question() {
     )
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun Cover(
     url: String?,
     modifier: Modifier = Modifier,
-    placeholder: @Composable () -> Unit = {},
+    indicator: Boolean = false,
+    placeholder: @Composable () -> Unit = { Question() },
 ) {
     val safe = url?.takeIf(::isHttps)
     val cached = safe?.let(::cachedBitmap)
@@ -544,13 +561,31 @@ internal fun Cover(
     if (bitmap != null) {
         Image(bitmap, null, modifier, contentScale = ContentScale.Crop)
     } else {
+        val scheme = MaterialTheme.colorScheme
         Box(
-            modifier.background(MaterialTheme.colorScheme.primaryContainer),
+            modifier.background(
+                if (done) scheme.primaryContainer else scheme.surfaceContainerHighest,
+            ),
             contentAlignment = Alignment.Center,
         ) {
-            if (done) placeholder()
+            if (done) {
+                placeholder()
+            } else if (indicator) {
+                LoadingIndicator()
+            }
         }
     }
+}
+
+@Composable
+private fun Placeholder(width: Dp) {
+    Box(
+        Modifier
+            .width(width)
+            .fillMaxHeight(0.7f)
+            .clip(MaterialTheme.shapes.extraSmall)
+            .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+    )
 }
 
 @Composable

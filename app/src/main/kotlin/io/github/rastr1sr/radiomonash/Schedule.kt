@@ -287,11 +287,10 @@ internal fun ScheduleContent(
                     contentType = { _, _ -> "show" },
                 ) { i, show ->
                     val onNow = now >= show.start && now < show.end
-                    val shapes = ListItemDefaults.segmentedShapes(i, list.size)
                     SegmentedListItem(
                         selected = onNow,
                         onClick = { picked = show.id },
-                        shapes = shapes.copy(selectedShape = shapes.shape),
+                        shapes = ListItemDefaults.segmentedShapes(i, list.size).flat(),
                         colors = segmented,
                         leadingContent = {
                             Text(

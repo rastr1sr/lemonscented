@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.only
@@ -27,6 +28,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItemColors
 import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.ListItemShapes
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.material3.MaterialTheme
@@ -47,9 +49,13 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -58,6 +64,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -81,6 +88,8 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 
 private val Seed = Color(0xFF0439D9)
+
+internal fun ListItemShapes.flat() = copy(selectedShape = shape)
 
 internal val segmented: ListItemColors
     @Composable get() = ListItemDefaults.segmentedColors(
@@ -224,6 +233,7 @@ private fun Home(onSettings: () -> Unit, player: @Composable () -> Unit) {
         if (tab != Tab.Player) backStack.add(tab)
     }
     val scroll = TopAppBarDefaults.pinnedScrollBehavior()
+    var selection by remember { mutableStateOf<Selection?>(null) }
     val layout = NavigationSuiteScaffoldDefaults.navigationSuiteType(currentWindowAdaptiveInfoV2())
     val bottomBar = layout == NavigationSuiteType.NavigationBar ||
         layout == NavigationSuiteType.ShortNavigationBarCompact ||
@@ -252,15 +262,34 @@ private fun Home(onSettings: () -> Unit, player: @Composable () -> Unit) {
                 ScaffoldDefaults.contentWindowInsets
             },
             topBar = {
+                val active = selection
                 TopAppBar(
                     title = {
                         Text(
-                            stringResource(
-                                if (current == Tab.Player) R.string.app_name else current.label,
-                            ),
+                            if (active != null) {
+                                pluralStringResource(
+                                    R.plurals.selected_count,
+                                    active.count,
+                                    active.count,
+                                )
+                            } else {
+                                stringResource(
+                                    if (current == Tab.Player) R.string.app_name else current.label,
+                                )
+                            },
                         )
                     },
-                    actions = {
+                    navigationIcon = {
+                        if (active != null) {
+                            IconButton(active.onClear) {
+                                Icon(
+                                    painterResource(R.drawable.ic_close),
+                                    stringResource(R.string.clear_selection),
+                                )
+                            }
+                        }
+                    },
+                    actions = active?.actions ?: {
                         IconButton(onSettings) {
                             Icon(
                                 painterResource(R.drawable.ic_settings),
@@ -288,8 +317,8 @@ private fun Home(onSettings: () -> Unit, player: @Composable () -> Unit) {
                 entryProvider = entryProvider {
                     entry<Tab.Player> { player() }
                     entry<Tab.Schedule> { Schedule() }
-                    entry<Tab.Recent> { History() }
-                    entry<Tab.You> { You() }
+                    entry<Tab.Recent> { History(onSelection = { selection = it }) }
+                    entry<Tab.You> { You(onSelection = { selection = it }) }
                 },
             )
         }
@@ -331,6 +360,21 @@ internal fun Refreshable(
         },
         content = content,
     )
+}
+
+internal fun <T> Set<T>.toggle(item: T) = if (item in this) this - item else this + item
+
+internal class Selection(
+    val count: Int,
+    val onClear: () -> Unit,
+    val actions: @Composable RowScope.() -> Unit,
+)
+
+@Composable
+internal fun PublishSelection(selection: Selection?, onSelection: (Selection?) -> Unit) {
+    val publish by rememberUpdatedState(onSelection)
+    SideEffect { publish(selection) }
+    DisposableEffect(Unit) { onDispose { publish(null) } }
 }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)

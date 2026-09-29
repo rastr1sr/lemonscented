@@ -1,5 +1,6 @@
 package io.github.rastr1sr.radiomonash
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -15,7 +16,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconToggleButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
@@ -111,11 +114,12 @@ internal class HistoryViewModel(private val library: Library) : ViewModel() {
 internal fun History(
     modifier: Modifier = Modifier,
     model: HistoryViewModel = viewModel { HistoryViewModel(radio().library) },
+    onSelection: (Selection?) -> Unit,
 ) {
     val load by model.songs.collectAsStateWithLifecycle()
     val refreshing by model.isRefreshing.collectAsStateWithLifecycle()
     val favs by model.favourites.collectAsStateWithLifecycle()
-    HistoryContent(load, refreshing, favs, model::refresh, model::favourite, modifier)
+    HistoryContent(load, refreshing, favs, model::refresh, model::favourite, modifier, onSelection)
 }
 
 @Composable
@@ -126,9 +130,14 @@ internal fun HistoryContent(
     onRefresh: () -> Unit,
     onFavourite: (Fav) -> Unit,
     modifier: Modifier = Modifier,
+    onSelection: (Selection?) -> Unit = {},
 ) {
     val zone = ZoneId.systemDefault()
     val time = timeFormat()
+    var picked by remember { mutableStateOf<Played?>(null) }
+    var selected by remember { mutableStateOf(emptySet<Instant>()) }
+    val selecting = selected.isNotEmpty()
+    BackHandler(selecting) { selected = emptySet() }
     val songs = when (val state = load) {
         Load.Loading -> return Loading(modifier)
 
@@ -140,6 +149,24 @@ internal fun HistoryContent(
 
         is Load.Ready -> state.value
     }
+    PublishSelection(
+        if (selecting) {
+            Selection(selected.size, { selected = emptySet() }) {
+                IconButton({
+                    songs.filter { it.at in selected }
+                        .map { Fav(it.title, it.artist, it.art) }
+                        .filterNot { favs.has(it) }
+                        .forEach(onFavourite)
+                    selected = emptySet()
+                }) {
+                    Icon(painterResource(heart(true)), stringResource(R.string.favourite))
+                }
+            }
+        } else {
+            null
+        },
+        onSelection,
+    )
     Refreshable(
         isRefreshing = refreshing,
         onRefresh = onRefresh,
@@ -154,16 +181,26 @@ internal fun HistoryContent(
                 val fav = Fav(song.title, song.artist, song.art)
                 val saved = favs.has(fav)
                 SegmentedListItem(
-                    shapes = ListItemDefaults.segmentedShapes(i, songs.size),
+                    selected = song.at in selected,
+                    onClick = {
+                        if (selecting) selected = selected.toggle(song.at) else picked = song
+                    },
+                    onLongClick = { selected = selected.toggle(song.at) },
+                    shapes = ListItemDefaults.segmentedShapes(i, songs.size).flat(),
                     colors = segmented,
                     leadingContent = {
-                        Cover(song.art, Modifier.size(56.dp).clip(MaterialTheme.shapes.small)) {
-                            Question()
-                        }
+                        Cover(song.art, Modifier.size(56.dp).clip(MaterialTheme.shapes.small))
                     },
                     trailingContent = {
-                        IconToggleButton(saved, { onFavourite(fav) }) {
-                            Icon(painterResource(heart(saved)), stringResource(R.string.favourite))
+                        if (selecting) {
+                            Checkbox(song.at in selected, null)
+                        } else {
+                            IconToggleButton(saved, { onFavourite(fav) }) {
+                                Icon(
+                                    painterResource(heart(saved)),
+                                    stringResource(R.string.favourite),
+                                )
+                            }
                         }
                     },
                     overlineContent = { Text(song.at.atZone(zone).format(time)) },
@@ -174,6 +211,11 @@ internal fun HistoryContent(
                     Text(song.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
+        }
+    }
+    picked?.let { song ->
+        Sheet({ picked = null }) { close ->
+            SongInfo(song.title, song.artist, song.art, null, close)
         }
     }
 }

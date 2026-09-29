@@ -1,5 +1,6 @@
 package io.github.rastr1sr.radiomonash
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -13,8 +14,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconToggleButton
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
@@ -56,10 +59,11 @@ internal class YouViewModel(private val library: Library) : ViewModel() {
 internal fun You(
     modifier: Modifier = Modifier,
     model: YouViewModel = viewModel { YouViewModel(radio().library) },
+    onSelection: (Selection?) -> Unit,
 ) {
     val load by model.stats.collectAsStateWithLifecycle()
     val favs by model.favourites.collectAsStateWithLifecycle()
-    YouContent((load as? Load.Ready)?.value, favs, model::remove, modifier)
+    YouContent((load as? Load.Ready)?.value, favs, model::remove, modifier, onSelection)
 }
 
 @Composable
@@ -68,8 +72,25 @@ internal fun YouContent(
     favs: List<Fav>,
     onRemove: (Fav) -> Unit,
     modifier: Modifier = Modifier,
+    onSelection: (Selection?) -> Unit = {},
 ) {
-    var removing by remember { mutableStateOf<Fav?>(null) }
+    var removing by remember { mutableStateOf(emptyList<Fav>()) }
+    var picked by remember { mutableStateOf<Fav?>(null) }
+    var selected by remember { mutableStateOf(emptySet<String>()) }
+    val selecting = selected.isNotEmpty()
+    BackHandler(selecting) { selected = emptySet() }
+    PublishSelection(
+        if (selecting) {
+            Selection(selected.size, { selected = emptySet() }) {
+                IconButton({ removing = favs.filter { it.key in selected } }) {
+                    Icon(painterResource(R.drawable.ic_delete), stringResource(R.string.remove))
+                }
+            }
+        } else {
+            null
+        },
+        onSelection,
+    )
     var only by remember { mutableStateOf<Boolean?>(null) }
     val mixed = favs.any { it.show } && favs.any { !it.show }
     val shown = if (mixed && only != null) favs.filter { it.show == only } else favs
@@ -130,7 +151,16 @@ internal fun YouContent(
             contentType = { _, _ -> "fav" },
         ) { i, fav ->
             SegmentedListItem(
-                shapes = ListItemDefaults.segmentedShapes(i, shown.size),
+                selected = fav.key in selected,
+                onClick = {
+                    if (selecting) {
+                        selected = selected.toggle(fav.key)
+                    } else if (!fav.show) {
+                        picked = fav
+                    }
+                },
+                onLongClick = { selected = selected.toggle(fav.key) },
+                shapes = ListItemDefaults.segmentedShapes(i, shown.size).flat(),
                 colors = segmented,
                 leadingContent = {
                     val art = fav.art.takeUnless { fav.show }
@@ -139,8 +169,12 @@ internal fun YouContent(
                     }
                 },
                 trailingContent = {
-                    IconToggleButton(true, { removing = fav }) {
-                        Icon(painterResource(heart(true)), stringResource(R.string.favourite))
+                    if (selecting) {
+                        Checkbox(fav.key in selected, null)
+                    } else {
+                        IconToggleButton(true, { removing = listOf(fav) }) {
+                            Icon(painterResource(heart(true)), stringResource(R.string.favourite))
+                        }
                     }
                 },
                 supportingContent = fav.artist?.let {
@@ -151,19 +185,40 @@ internal fun YouContent(
             }
         }
     }
-    removing?.let { fav ->
+    picked?.let { fav ->
+        Sheet({ picked = null }) { close ->
+            SongInfo(fav.title, fav.artist, fav.art, null, close)
+        }
+    }
+    if (removing.isNotEmpty()) {
+        val single = removing.singleOrNull()
         AlertDialog(
-            onDismissRequest = { removing = null },
-            title = { Text(fav.title) },
-            text = { Text(stringResource(R.string.remove_question)) },
+            onDismissRequest = { removing = emptyList() },
+            title = single?.let { { Text(it.title) } },
+            text = {
+                Text(
+                    if (single != null) {
+                        stringResource(R.string.remove_question)
+                    } else {
+                        pluralStringResource(
+                            R.plurals.remove_favourites_question,
+                            removing.size,
+                            removing.size,
+                        )
+                    },
+                )
+            },
             confirmButton = {
                 TextButton(onClick = {
-                    removing = null
-                    onRemove(fav)
+                    removing.forEach(onRemove)
+                    removing = emptyList()
+                    selected = emptySet()
                 }) { Text(stringResource(R.string.remove)) }
             },
             dismissButton = {
-                TextButton(onClick = { removing = null }) { Text(stringResource(R.string.keep)) }
+                TextButton(onClick = { removing = emptyList() }) {
+                    Text(stringResource(R.string.keep))
+                }
             },
         )
     }

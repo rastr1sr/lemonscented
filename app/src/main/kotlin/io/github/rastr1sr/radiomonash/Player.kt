@@ -533,7 +533,7 @@ internal fun Artwork(
 }
 
 @Composable
-internal fun Question() {
+private fun Question() {
     Icon(
         painterResource(R.drawable.ic_question),
         null,

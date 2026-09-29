@@ -152,7 +152,12 @@ private sealed class Tab(val label: Int, val icon: Int, val selected: Int) : Nav
 private val tabs = listOf(Tab.Player, Tab.Schedule, Tab.Recent, Tab.You)
 
 @Composable
-private fun Radio(model: PlayerViewModel = viewModel(factory = PlayerViewModel.Factory)) {
+private fun Radio(
+    model: PlayerViewModel = viewModel {
+        val radio = radio()
+        PlayerViewModel(Playback(radio), radio.library, radio.shows, radio.preferences)
+    },
+) {
     val state by model.player.collectAsStateWithLifecycle()
     val screens = rememberNavBackStack(Screen.Home)
     val pop: () -> Unit = { screens.removeAt(screens.lastIndex) }

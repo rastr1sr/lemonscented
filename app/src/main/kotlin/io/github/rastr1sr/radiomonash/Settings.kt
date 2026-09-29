@@ -57,8 +57,6 @@ import androidx.core.content.edit
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.lifecycle.viewmodel.initializer
-import androidx.lifecycle.viewmodel.viewModelFactory
 import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -144,15 +142,6 @@ internal class SettingsViewModel(
     fun clearStats() = library.clearStats()
 
     private fun cacheSize() = checkNotNull(HttpResponseCache.getInstalled()).size()
-
-    companion object {
-        val Factory = viewModelFactory {
-            initializer {
-                val radio = radio()
-                SettingsViewModel(radio.preferences, radio.library, radio.artwork)
-            }
-        }
-    }
 }
 
 private enum class Ask { Theme, Buffer, Stream, Stats }
@@ -216,7 +205,9 @@ private fun Toggle(
 internal fun SettingsScreen(
     onBack: () -> Unit,
     onLogs: () -> Unit,
-    model: SettingsViewModel = viewModel(factory = SettingsViewModel.Factory),
+    model: SettingsViewModel = viewModel {
+        SettingsViewModel(radio().preferences, radio().library, radio().artwork)
+    },
 ) {
     val context = LocalContext.current
     val look by model.look.collectAsStateWithLifecycle()

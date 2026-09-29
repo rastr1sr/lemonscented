@@ -61,8 +61,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.lifecycle.viewmodel.initializer
-import androidx.lifecycle.viewmodel.viewModelFactory
 import java.io.File
 import java.io.IOException
 import java.net.URLEncoder
@@ -144,15 +142,6 @@ internal class ScheduleViewModel(private val source: Shows, private val reminder
     fun toggleReminder(show: Show) = reminders.toggleReminder(show)
 
     fun toggleFollow(show: Show, shows: List<Show>) = reminders.toggleFollow(show, shows)
-
-    companion object {
-        val Factory = viewModelFactory {
-            initializer {
-                val radio = radio()
-                ScheduleViewModel(radio.shows, radio.reminders)
-            }
-        }
-    }
 }
 
 private fun schedule(zone: ZoneId, saved: File): List<Show>? = try {
@@ -205,7 +194,7 @@ internal fun parseSchedule(text: String): List<Show> {
 @Composable
 internal fun Schedule(
     modifier: Modifier = Modifier,
-    model: ScheduleViewModel = viewModel(factory = ScheduleViewModel.Factory),
+    model: ScheduleViewModel = viewModel { ScheduleViewModel(radio().shows, radio().reminders) },
 ) {
     val load by model.shows.collectAsStateWithLifecycle()
     val refreshing by model.isRefreshing.collectAsStateWithLifecycle()

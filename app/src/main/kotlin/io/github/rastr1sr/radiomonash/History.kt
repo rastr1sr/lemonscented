@@ -40,8 +40,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.lifecycle.viewmodel.initializer
-import androidx.lifecycle.viewmodel.viewModelFactory
 import java.io.IOException
 import java.time.Instant
 import java.time.ZoneId
@@ -107,16 +105,12 @@ internal class HistoryViewModel(private val library: Library) : ViewModel() {
     }
 
     fun favourite(fav: Fav) = library.toggle(fav)
-
-    companion object {
-        val Factory = viewModelFactory { initializer { HistoryViewModel(radio().library) } }
-    }
 }
 
 @Composable
 internal fun History(
     modifier: Modifier = Modifier,
-    model: HistoryViewModel = viewModel(factory = HistoryViewModel.Factory),
+    model: HistoryViewModel = viewModel { HistoryViewModel(radio().library) },
 ) {
     val load by model.songs.collectAsStateWithLifecycle()
     val refreshing by model.isRefreshing.collectAsStateWithLifecycle()

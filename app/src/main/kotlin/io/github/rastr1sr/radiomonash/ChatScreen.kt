@@ -73,8 +73,6 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.lifecycle.viewmodel.initializer
-import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.media3.common.MediaMetadata
 import com.materialkolor.hct.Hct
 import java.io.IOException
@@ -149,10 +147,6 @@ internal class ChatViewModel(private val chat: Chat) : ViewModel() {
         chat.unblock(userId)
         blockedState.value = chat.blocked()
     }
-
-    companion object {
-        val Factory = viewModelFactory { initializer { ChatViewModel(radio().chat) } }
-    }
 }
 
 @Composable
@@ -163,7 +157,7 @@ internal fun ChatScreen(
     onToggle: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
-    model: ChatViewModel = viewModel(factory = ChatViewModel.Factory),
+    model: ChatViewModel = viewModel { ChatViewModel(radio().chat) },
 ) {
     DisposableEffect(model) {
         model.open()

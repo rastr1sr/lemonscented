@@ -76,8 +76,6 @@ import androidx.core.net.toUri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
-import androidx.lifecycle.viewmodel.initializer
-import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
@@ -162,15 +160,6 @@ internal class PlayerViewModel(
     fun sleep(ms: Long) = Sleep.set(ms)
 
     override fun onCleared() = playback.release()
-
-    companion object {
-        val Factory = viewModelFactory {
-            initializer {
-                val radio = radio()
-                PlayerViewModel(Playback(radio), radio.library, radio.shows, radio.preferences)
-            }
-        }
-    }
 }
 
 @Composable

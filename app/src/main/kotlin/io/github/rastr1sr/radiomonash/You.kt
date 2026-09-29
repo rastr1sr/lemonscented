@@ -40,8 +40,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.lifecycle.viewmodel.initializer
-import androidx.lifecycle.viewmodel.viewModelFactory
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -52,16 +50,12 @@ internal class YouViewModel(private val library: Library) : ViewModel() {
     val favourites: StateFlow<List<Fav>> = library.favourites
 
     fun remove(fav: Fav) = library.toggle(fav)
-
-    companion object {
-        val Factory = viewModelFactory { initializer { YouViewModel(radio().library) } }
-    }
 }
 
 @Composable
 internal fun You(
     modifier: Modifier = Modifier,
-    model: YouViewModel = viewModel(factory = YouViewModel.Factory),
+    model: YouViewModel = viewModel { YouViewModel(radio().library) },
 ) {
     val load by model.stats.collectAsStateWithLifecycle()
     val favs by model.favourites.collectAsStateWithLifecycle()

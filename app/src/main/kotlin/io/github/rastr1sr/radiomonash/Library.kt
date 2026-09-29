@@ -1,11 +1,12 @@
 package io.github.rastr1sr.radiomonash
 
 import android.content.Context
-import androidx.compose.runtime.mutableStateListOf
 import androidx.core.content.edit
 import java.io.File
 import java.io.IOException
 import java.time.LocalDate
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import org.json.JSONException
 import org.json.JSONObject
 
@@ -28,7 +29,8 @@ internal class Stats(
     val topShows: List<String>,
 )
 
-internal val favourites = mutableStateListOf<Fav>()
+private val favs = MutableStateFlow<List<Fav>>(emptyList())
+internal val favourites: StateFlow<List<Fav>> = favs
 
 private fun favPrefs(context: Context) =
     context.getSharedPreferences("favourites", Context.MODE_PRIVATE)
@@ -39,8 +41,8 @@ private fun listenPrefs(context: Context) =
 private fun playLog(context: Context) = File(context.filesDir, "plays.jsonl")
 
 fun loadFavourites(context: Context) {
-    if (favourites.isNotEmpty()) return
-    favourites += favPrefs(context).all.values.mapNotNull { value ->
+    if (favs.value.isNotEmpty()) return
+    favs.value = favPrefs(context).all.values.mapNotNull { value ->
         try {
             val json = JSONObject(value.toString())
             Fav(
@@ -56,15 +58,15 @@ fun loadFavourites(context: Context) {
     }.sortedByDescending { it.at }
 }
 
-internal fun isFavourite(fav: Fav) = favourites.any { it.key == fav.key }
+internal fun List<Fav>.has(fav: Fav) = any { it.key == fav.key }
 
 internal fun toggleFavourite(context: Context, fav: Fav) {
-    if (isFavourite(fav)) {
-        favourites.removeAll { it.key == fav.key }
+    if (favs.value.has(fav)) {
+        favs.value = favs.value.filterNot { it.key == fav.key }
         favPrefs(context).edit { remove(fav.key) }
         return
     }
-    favourites.add(0, fav)
+    favs.value = listOf(fav) + favs.value
     val json = JSONObject()
         .put("title", fav.title)
         .put("artist", fav.artist)
@@ -77,6 +79,12 @@ internal fun toggleFavourite(context: Context, fav: Fav) {
 fun addListening(context: Context, seconds: Long) {
     val day = LocalDate.now().toString()
     listenPrefs(context).edit { putLong(day, listenPrefs(context).getLong(day, 0) + seconds) }
+}
+
+fun clearStats(context: Context) {
+    listenPrefs(context).edit { clear() }
+    playLog(context).delete()
+    Logs.add("Storage", "Listening stats cleared")
 }
 
 fun logPlay(context: Context, artist: String?, show: String?) {

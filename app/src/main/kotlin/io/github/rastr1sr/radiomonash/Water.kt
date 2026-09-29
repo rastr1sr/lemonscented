@@ -26,10 +26,13 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onVisibilityChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.materialkolor.hct.Hct
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.random.Random
@@ -79,30 +82,34 @@ half4 main(float2 p) {
 
 @Composable
 internal fun Lemon(show: Boolean, modifier: Modifier = Modifier, still: Boolean = false) {
-    val slice = @Composable {
+    val context = LocalContext.current
+    val look by remember { Looks.flow(context) }.collectAsStateWithLifecycle()
+    val still = still || !look.animated
+    val scheme = MaterialTheme.colorScheme
+    val slice = @Composable { tint: Color ->
         Icon(
             painterResource(R.drawable.ic_launcher_foreground),
             null,
             Modifier.fillMaxSize().scale(1.5f),
-            tint = Color.White,
+            tint = tint,
         )
     }
     if (!show) {
-        Box(modifier.background(Seed)) { slice() }
+        Box(modifier.background(scheme.primary)) { slice(scheme.onPrimary) }
         return
     }
     val ripples = if (still) null else rememberRipples()
     val shader = remember {
         if (Build.VERSION.SDK_INT >= 33 && !still) RuntimeShader(DROPS) else null
     }
-    val scheme = MaterialTheme.colorScheme
-    val colors = remember(scheme) {
-        listOf(
-            vivid(scheme.primary, 225f),
-            vivid(scheme.tertiary, 255f),
-            vivid(scheme.secondary, 205f),
-        )
+    val dark = scheme.surface.luminance() < 0.5f
+    val colors = remember(dark) {
+        val tones = if (dark) listOf(20.0, 40.0, 30.0) else listOf(90.0, 75.0, 85.0)
+        listOf(270.0, 255.0, 285.0).zip(tones) { hue, tone ->
+            Color(Hct.from(hue, 56.0, tone).toInt())
+        }
     }
+    val tint = remember(dark) { Color(Hct.from(270.0, 48.0, if (dark) 90.0 else 10.0).toInt()) }
     val blobs = remember { List(4) { FloatArray(4) { Random.nextFloat() } } }
     val layer = when {
         ripples == null -> modifier
@@ -129,7 +136,7 @@ internal fun Lemon(show: Boolean, modifier: Modifier = Modifier, still: Boolean 
                 drawCircle(brush, radius, center)
             }
         },
-    ) { slice() }
+    ) { slice(tint) }
 }
 
 /** [time] only advances while visible. */
@@ -179,11 +186,4 @@ private fun Modifier.drops(ripples: Ripples, shader: RuntimeShader): Modifier {
         renderEffect = RenderEffect.createRuntimeShaderEffect(shader, "content")
             .asComposeRenderEffect()
     }
-}
-
-private fun vivid(color: Color, fallbackHue: Float): Color {
-    val hsv = FloatArray(3)
-    android.graphics.Color.colorToHSV(color.toArgb(), hsv)
-    val hue = if (hsv[1] < 0.2f) fallbackHue else hsv[0]
-    return Color.hsv(hue, hsv[1].coerceAtLeast(0.7f), hsv[2].coerceIn(0.45f, 0.8f))
 }

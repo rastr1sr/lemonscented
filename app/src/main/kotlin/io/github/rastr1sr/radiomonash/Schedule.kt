@@ -1,6 +1,8 @@
 package io.github.rastr1sr.radiomonash
 
 import android.Manifest
+import android.app.Application
+import android.content.Context
 import android.os.Build
 import android.text.format.DateFormat
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -10,11 +12,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -22,39 +23,45 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.SegmentedListItem
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.clearAndSetSemantics
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.compose.viewModel
 import java.io.File
 import java.io.IOException
 import java.net.URLEncoder
@@ -64,9 +71,12 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
 import java.time.temporal.ChronoUnit
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.stateIn
 import org.json.JSONException
 import org.json.JSONObject
 
@@ -79,12 +89,77 @@ internal class Show(
     val description: String?,
 )
 
-private var cache by mutableStateOf<List<Show>?>(null)
-private var cachedAt = Instant.EPOCH
+internal object Shows {
+    private val shows = MutableStateFlow<List<Show>?>(null)
+    val list: StateFlow<List<Show>?> = shows
+    private var fetchedAt = Instant.EPOCH
 
-internal fun currentShow(): Show? {
-    val now = Instant.now()
-    return cache?.firstOrNull { now >= it.start && now < it.end }
+    fun load(context: Context, force: Boolean): List<Show>? {
+        val file = File(context.filesDir, "schedule.json")
+        if (shows.value == null) shows.value = saved(file)
+        if (force || shows.value == null || Instant.now() > fetchedAt.plusSeconds(600)) {
+            schedule(ZoneId.systemDefault(), file)?.let {
+                shows.value = it
+                fetchedAt = Instant.now()
+                remindFollowed(context, it)
+            }
+        }
+        return shows.value
+    }
+}
+
+internal fun List<Show>.current(now: Instant = Instant.now()) = firstOrNull {
+    now >= it.start &&
+        now < it.end
+}
+
+class ScheduleViewModel(private val app: Application) : AndroidViewModel(app) {
+    private val attempts = MutableStateFlow(0)
+    private val refreshing = MutableStateFlow(false)
+    private val remindedIds = MutableStateFlow(reminders(app))
+    private val followedTitles = MutableStateFlow(follows(app))
+    val isRefreshing: StateFlow<Boolean> = refreshing
+    val reminded: StateFlow<Set<String>> = remindedIds
+    val followed: StateFlow<Set<String>> = followedTitles
+
+    internal val shows: StateFlow<Load<List<Show>>> = attempts.flatMapLatest { attempt ->
+        var force = attempt > 0
+        poll(60_000) {
+            Shows.load(app, force).also {
+                force = false
+                refreshing.value = false
+                remindedIds.value = reminders(app)
+            }
+        }
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5_000),
+        Shows.list.value?.let { Load.Ready(it) } ?: Load.Loading,
+    )
+
+    fun refresh() {
+        refreshing.value = true
+        attempts.value++
+    }
+
+    internal fun toggleReminder(show: Show) {
+        if (show.id in remindedIds.value) {
+            forget(app, show.id)
+        } else {
+            remind(app, show.id, show.start.toEpochMilli(), show.title)
+        }
+        remindedIds.value = reminders(app)
+    }
+
+    internal fun toggleFollow(show: Show, shows: List<Show>) {
+        if (show.title in followedTitles.value) {
+            unfollow(app, show.title, shows)
+        } else {
+            follow(app, show.title, shows)
+        }
+        followedTitles.value = follows(app)
+        remindedIds.value = reminders(app)
+    }
 }
 
 private fun schedule(zone: ZoneId, saved: File): List<Show>? = try {
@@ -94,6 +169,7 @@ private fun schedule(zone: ZoneId, saved: File): List<Show>? = try {
     val text = radiocult("schedule?startDate=$from&endDate=$to&timezone=$tz")
     parseSchedule(text)?.also { saved.writeText(text) }
 } catch (e: IOException) {
+    Logs.add("Network", "Schedule: ${e.message}")
     null
 }
 
@@ -126,60 +202,65 @@ internal fun parseSchedule(text: String): List<Show>? = try {
     null
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun Schedule(modifier: Modifier = Modifier) {
+fun Schedule(modifier: Modifier = Modifier, model: ScheduleViewModel = viewModel()) {
+    val load by model.shows.collectAsStateWithLifecycle()
+    val refreshing by model.isRefreshing.collectAsStateWithLifecycle()
+    val reminded by model.reminded.collectAsStateWithLifecycle()
+    val followed by model.followed.collectAsStateWithLifecycle()
+    ScheduleContent(
+        load,
+        refreshing,
+        reminded,
+        followed,
+        onRefresh = model::refresh,
+        onRemind = model::toggleReminder,
+        onFollow = model::toggleFollow,
+        modifier = modifier,
+    )
+}
+
+@Composable
+internal fun ScheduleContent(
+    load: Load<List<Show>>,
+    refreshing: Boolean,
+    reminded: Set<String>,
+    followed: Set<String>,
+    onRefresh: () -> Unit,
+    onRemind: (Show) -> Unit,
+    onFollow: (Show, List<Show>) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val zone = ZoneId.systemDefault()
-    var attempt by remember { mutableIntStateOf(0) }
-    var shows by remember { mutableStateOf(cache) }
-    var failed by remember { mutableStateOf(false) }
-    var refreshing by remember { mutableStateOf(false) }
-    val context = LocalContext.current
-    var reminded by remember { mutableStateOf(reminders(context)) }
+    var picked by remember { mutableStateOf<String?>(null) }
     var asking by remember { mutableStateOf<Show?>(null) }
-    var followed by remember { mutableStateOf(follows(context)) }
     var following by remember { mutableStateOf<Show?>(null) }
     val permission =
         rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
-    val file = File(LocalContext.current.filesDir, "schedule.json")
     val now by produceState(Instant.now()) {
         while (true) {
             delay(60_000)
             value = Instant.now()
         }
     }
-    LaunchedEffect(attempt, now) {
-        if (shows == null) shows = withContext(Dispatchers.IO) { saved(file) }
-        if (shows != null && Instant.now() < cachedAt.plusSeconds(600)) {
-            refreshing = false
-            return@LaunchedEffect
-        }
-        failed = false
-        val fresh = withContext(Dispatchers.IO) { schedule(zone, file) }
-        if (fresh != null) {
-            cache = fresh
-            cachedAt = Instant.now()
-            shows = fresh
-            remindFollowed(context, fresh)
-            reminded = reminders(context)
-        }
-        failed = shows == null
-        refreshing = false
-    }
     val locale = LocalConfiguration.current.locales[0]
     val day = DateTimeFormatter.ofPattern(DateFormat.getBestDateTimePattern(locale, "EEEEdMMMM"))
     val time = timeFormat()
-    if (failed) {
-        Failed(stringResource(R.string.schedule_failed), { attempt++ }, modifier)
-        return
+    val loaded = when (val state = load) {
+        Load.Loading -> return Loading(modifier)
+
+        Load.Failed -> return Failed(
+            stringResource(R.string.schedule_failed),
+            onRefresh,
+            modifier,
+        )
+
+        is Load.Ready -> state.value
     }
-    val loaded = shows ?: return SkeletonRows(DpSize(56.dp, 16.dp), modifier)
     val measurer = rememberTextMeasurer()
-    val timeStyle = MaterialTheme.typography.bodyMedium
-    val liveStyle = MaterialTheme.typography.labelSmall
-    val live = stringResource(R.string.live)
+    val timeStyle = MaterialTheme.typography.labelLarge
+    val playlist = stringResource(R.string.playlist)
     val nowLabel = stringResource(R.string.now)
-    val describe = stringResource(R.string.show_description)
     val density = LocalDensity.current
     val timeWidth = remember(loaded, time, timeStyle) {
         with(density) {
@@ -188,101 +269,38 @@ fun Schedule(modifier: Modifier = Modifier) {
                 .toDp()
         }
     }
-    val liveWidth = with(density) { measurer.measure(live, liveStyle).size.width.toDp() }
-    var open by remember { mutableStateOf<String?>(null) }
     val upcoming = loaded.filter { it.end > now }
     if (upcoming.isEmpty()) {
         return Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text(stringResource(R.string.no_shows))
         }
     }
-    PullToRefreshBox(
+    Refreshable(
         isRefreshing = refreshing,
-        onRefresh = {
-            refreshing = true
-            cachedAt = Instant.EPOCH
-            attempt++
-        },
+        onRefresh = onRefresh,
         modifier = modifier,
     ) {
-        LazyColumn(Modifier.fillMaxSize().wrapContentWidth().widthIn(max = 600.dp)) {
+        LazyColumn(
+            Modifier.fillMaxSize().wrapContentWidth().widthIn(max = 600.dp),
+            contentPadding = PaddingValues(Spacing.md, 0.dp, Spacing.md, Spacing.md),
+            verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
+        ) {
             upcoming.groupBy {
                 it.start.atZone(zone).toLocalDate()
             }.forEach { (date, list) ->
-                item(date.toString()) {
-                    Text(
-                        date.format(day),
-                        Modifier
-                            .padding(start = 24.dp, top = 16.dp, bottom = 4.dp)
-                            .semantics { heading() },
-                        color = MaterialTheme.colorScheme.primary,
-                        style = MaterialTheme.typography.labelLarge,
-                    )
-                }
-                items(list, key = { it.id }) { show ->
+                item(date.toString(), contentType = "day") { Header(date.format(day)) }
+                itemsIndexed(
+                    list,
+                    key = { _, show -> show.id },
+                    contentType = { _, _ -> "show" },
+                ) { i, show ->
                     val onNow = now >= show.start && now < show.end
-                    val later = show.start > now
-                    val isOpen = open == show.id
-                    val hasReminder = show.id in reminded
-                    val bell = if (hasReminder) R.drawable.ic_bell_on else R.drawable.ic_bell_off
-                    val label = if (hasReminder) R.string.reminder_set else R.string.remind_me
-                    ListItem(
-                        headlineContent = {
-                            Text(
-                                show.title,
-                                Modifier.basicMarquee(iterations = Int.MAX_VALUE),
-                                maxLines = 1,
-                            )
-                        },
-                        modifier = Modifier.clickable(
-                            enabled = true,
-                            onClickLabel = describe,
-                        ) {
-                            open = if (isOpen) null else show.id
-                        },
-                        supportingContent = if (show.description == null && !isOpen) {
-                            null
-                        } else {
-                            {
-                                Column {
-                                    show.description?.let {
-                                        Text(
-                                            if (isOpen) it else preview(it),
-                                            maxLines = if (isOpen) Int.MAX_VALUE else 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
-                                    }
-                                    if (isOpen) {
-                                        Row {
-                                            if (later) {
-                                                TextButton(onClick = { asking = show }) {
-                                                    Icon(
-                                                        painterResource(bell),
-                                                        null,
-                                                        Modifier.size(18.dp),
-                                                    )
-                                                    Spacer(Modifier.width(8.dp))
-                                                    Text(stringResource(label))
-                                                }
-                                            }
-                                            TextButton(onClick = { following = show }) {
-                                                Text(
-                                                    stringResource(
-                                                        if (show.title in
-                                                            followed
-                                                        ) {
-                                                            R.string.following
-                                                        } else {
-                                                            R.string.follow
-                                                        },
-                                                    ),
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        },
+                    val shapes = ListItemDefaults.segmentedShapes(i, list.size)
+                    SegmentedListItem(
+                        selected = onNow,
+                        onClick = { picked = show.id },
+                        shapes = shapes.copy(selectedShape = shapes.shape),
+                        colors = segmented,
                         leadingContent = {
                             Text(
                                 if (onNow) nowLabel else show.start.atZone(zone).format(time),
@@ -290,35 +308,80 @@ fun Schedule(modifier: Modifier = Modifier) {
                                 style = timeStyle,
                             )
                         },
-                        trailingContent = {
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                if (hasReminder) {
-                                    Icon(
-                                        painterResource(R.drawable.ic_bell_on),
-                                        stringResource(R.string.reminder_set),
-                                        Modifier.size(16.dp),
-                                        tint = MaterialTheme.colorScheme.primary,
-                                    )
-                                }
-                                Text(
-                                    if (show.live) live else "",
-                                    Modifier.width(liveWidth),
-                                    color = MaterialTheme.colorScheme.error,
-                                    style = liveStyle,
+                        trailingContent = if (show.id in reminded) {
+                            {
+                                Icon(
+                                    painterResource(R.drawable.ic_bell_on),
+                                    stringResource(R.string.reminder_set),
                                 )
                             }
+                        } else {
+                            null
                         },
-                        colors = ListItemDefaults.colors(
-                            containerColor = if (onNow) {
-                                MaterialTheme.colorScheme.secondaryContainer
-                            } else {
-                                Color.Transparent
-                            },
-                        ),
+                        overlineContent = if (show.live) null else ({ Text(playlist) }),
+                        supportingContent = show.description?.let {
+                            { Text(preview(it), maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                        },
+                    ) {
+                        Text(show.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
+        }
+    }
+    upcoming.find { it.id == picked }?.let { show ->
+        val start = show.start.atZone(zone)
+        val hasReminder = show.id in reminded
+        val bell = if (hasReminder) R.drawable.ic_bell_on else R.drawable.ic_bell_off
+        val remindLabel = if (hasReminder) R.string.reminder_set else R.string.remind_me
+        val followLabel = if (show.title in followed) R.string.following else R.string.follow
+        Sheet({ picked = null }) { close ->
+            Column(
+                Modifier
+                    .verticalScroll(rememberScrollState())
+                    .padding(start = Spacing.lg, end = Spacing.lg, bottom = Spacing.lg),
+                verticalArrangement = Arrangement.spacedBy(Spacing.md),
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(Spacing.xxs)) {
+                    Text(
+                        listOfNotNull(
+                            start.format(day),
+                            start.format(time),
+                            playlist.takeUnless { show.live },
+                        ).joinToString(" · "),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.labelLarge,
                     )
+                    Text(show.title, style = MaterialTheme.typography.headlineSmall)
+                }
+                show.description?.let {
+                    Text(
+                        it,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                    if (show.start > now) {
+                        FilledTonalButton({
+                            close()
+                            asking = show
+                        }) {
+                            Icon(
+                                painterResource(bell),
+                                null,
+                                Modifier.size(ButtonDefaults.IconSize),
+                            )
+                            Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+                            Text(stringResource(remindLabel))
+                        }
+                    }
+                    OutlinedButton({
+                        close()
+                        following = show
+                    }) {
+                        Text(stringResource(followLabel))
+                    }
                 }
             }
         }
@@ -338,16 +401,10 @@ fun Schedule(modifier: Modifier = Modifier) {
             confirmButton = {
                 TextButton(onClick = {
                     following = null
-                    if (isFollowed) {
-                        unfollow(context, show.title, loaded)
-                    } else {
-                        follow(context, show.title, loaded)
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            permission.launch(Manifest.permission.POST_NOTIFICATIONS)
-                        }
+                    onFollow(show, loaded)
+                    if (!isFollowed && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        permission.launch(Manifest.permission.POST_NOTIFICATIONS)
                     }
-                    followed = follows(context)
-                    reminded = reminders(context)
                 }) { Text(stringResource(if (isFollowed) R.string.unfollow else R.string.follow)) }
             },
             dismissButton = {
@@ -372,15 +429,9 @@ fun Schedule(modifier: Modifier = Modifier) {
             confirmButton = {
                 TextButton(onClick = {
                     asking = null
-                    if (hasReminder) {
-                        forget(context, show.id)
-                        reminded = reminded - show.id
-                    } else {
-                        remind(context, show.id, show.start.toEpochMilli(), show.title)
-                        reminded = reminded + show.id
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            permission.launch(Manifest.permission.POST_NOTIFICATIONS)
-                        }
+                    onRemind(show)
+                    if (!hasReminder && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        permission.launch(Manifest.permission.POST_NOTIFICATIONS)
                     }
                 }) {
                     Text(
@@ -408,4 +459,39 @@ internal fun timeFormat(): DateTimeFormatter {
         clock,
     ).replace(Regex("\\b([hH])\\b"), "$1$1")
     return DateTimeFormatter.ofPattern(hours)
+}
+
+@Preview
+@Composable
+private fun SchedulePreview() {
+    val start = Instant.now().truncatedTo(ChronoUnit.HOURS)
+    val shows = listOf(
+        Show(
+            "a",
+            "Soundscaping",
+            start,
+            start.plusSeconds(3600),
+            true,
+            "Modern instrumental music.",
+        ),
+        Show(
+            "b",
+            "Vegemite on Toast",
+            start.plusSeconds(3600),
+            start.plusSeconds(7200),
+            true,
+            null,
+        ),
+        Show(
+            "c",
+            "Aussie Pub Rock Hour",
+            start.plusSeconds(7200),
+            start.plusSeconds(10800),
+            false,
+            null,
+        ),
+    )
+    LemonScentedTheme {
+        ScheduleContent(Load.Ready(shows), false, setOf("b"), emptySet(), {}, {}, { _, _ -> })
+    }
 }

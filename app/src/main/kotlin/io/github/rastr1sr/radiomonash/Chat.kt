@@ -3,14 +3,15 @@ package io.github.rastr1sr.radiomonash
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.core.content.edit
 import java.io.IOException
 import java.util.UUID
 import kotlin.concurrent.thread
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -68,11 +69,16 @@ internal fun parseMessages(array: JSONArray?): List<Message> {
     return (0 until array.length()).mapNotNull { array.optJSONObject(it)?.let(::parseMessage) }
 }
 
+internal enum class ChatError { Load, Send }
+
 internal object Chat {
-    val messages = mutableStateListOf<Message>()
-    var connected by mutableStateOf(false)
-    var older by mutableStateOf(true)
-    var failed by mutableStateOf(false)
+    private val list = MutableStateFlow<List<Message>>(emptyList())
+    private val online = MutableStateFlow(false)
+    private val more = MutableStateFlow(true)
+    private val problems = MutableSharedFlow<ChatError>(extraBufferCapacity = 4)
+    val messages: StateFlow<List<Message>> = list
+    val connected: StateFlow<Boolean> = online
+    val errors: SharedFlow<ChatError> = problems
 
     private val main = Handler(Looper.getMainLooper())
     private val client = OkHttpClient()
@@ -106,13 +112,12 @@ internal object Chat {
     fun lastSeen(context: Context) = prefs(context).getLong("seen", 0)
 
     fun seen(context: Context) {
-        messages.lastOrNull()?.let { last -> prefs(context).edit { putLong("seen", last.at) } }
+        list.value.lastOrNull()?.let { last -> prefs(context).edit { putLong("seen", last.at) } }
     }
 
     fun open() {
         if (open) return
         open = true
-        failed = false
         thread {
             val history =
                 runCatching {
@@ -121,7 +126,10 @@ internal object Chat {
                     )
                 }
             main.post {
-                history.onSuccess { merge(it) }.onFailure { failed = true }
+                history.onSuccess { merge(it) }.onFailure {
+                    Logs.add("Chat", "History: ${it.message}")
+                    problems.tryEmit(ChatError.Load)
+                }
                 connect()
             }
         }
@@ -131,13 +139,13 @@ internal object Chat {
         open = false
         socket?.close(1000, null)
         socket = null
-        connected = false
+        online.value = false
     }
 
     fun loadOlder() {
-        val first = messages.firstOrNull()?.timestampId ?: return
-        if (!older) return
-        older = false
+        val first = list.value.firstOrNull()?.timestampId ?: return
+        if (!more.value) return
+        more.value = false
         thread {
             val page = runCatching {
                 parseMessages(
@@ -148,7 +156,7 @@ internal object Chat {
             }.getOrNull()
             main.post {
                 if (page != null) merge(page)
-                older = !page.isNullOrEmpty()
+                more.value = !page.isNullOrEmpty()
             }
         }
     }
@@ -190,7 +198,7 @@ internal object Chat {
     fun send(context: Context, text: String) = emit(context, "message", text)
 
     fun report(message: Message) {
-        messages.removeAll { it.id == message.id }
+        list.update { all -> all.filterNot { it.id == message.id } }
         thread {
             runCatching {
                 request(
@@ -216,10 +224,11 @@ internal object Chat {
             .put("type", type)
             .put("content", JSONObject().put("text", text))
         if (socket?.send("42" + JSONArray().put("message").put(json)) != true) {
-            failed = true
+            Logs.add("Chat", "Send failed, not connected")
+            problems.tryEmit(ChatError.Send)
             return
         }
-        parseMessage(json)?.let { messages += it.copy(acked = false) }
+        parseMessage(json)?.let { sent -> list.update { it + sent.copy(acked = false) } }
     }
 
     private fun connect() {
@@ -230,24 +239,35 @@ internal object Chat {
                 override fun onMessage(webSocket: WebSocket, text: String) {
                     when {
                         text.startsWith("0") -> webSocket.send("40")
+
                         text == "2" -> webSocket.send("3")
-                        text.startsWith("40") -> main.post { connected = true }
+
+                        text.startsWith("40") -> {
+                            Logs.add("Chat", "Connected")
+                            online.value = true
+                        }
+
                         text.startsWith("42") -> event(text.substring(2))
                     }
                 }
 
-                override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) =
+                override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                    Logs.add("Chat", "Disconnected: ${t.message}")
                     retry()
+                }
 
-                override fun onClosed(webSocket: WebSocket, code: Int, reason: String) = retry()
+                override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                    Logs.add("Chat", "Closed $code")
+                    retry()
+                }
             },
         )
     }
 
     private fun retry() {
         main.post {
-            connected = false
-            if (open) main.postDelayed({ if (open && !connected) connect() }, 3000)
+            online.value = false
+            if (open) main.postDelayed({ if (open && !online.value) connect() }, 3000)
         }
     }
 
@@ -261,34 +281,40 @@ internal object Chat {
                 )
 
                 "sent" -> {
-                    val i = messages.indexOfFirst { it.id == data.optString("id") }
-                    if (i >= 0 && data.optBoolean("success")) {
-                        messages[i] =
-                            messages[i].copy(
-                                acked = true,
-                                timestampId = data.optString("timestampId"),
-                            )
-                    } else if (i >= 0) {
-                        messages.removeAt(i)
-                        failed = true
+                    val id = data.optString("id")
+                    if (!data.optBoolean("success")) problems.tryEmit(ChatError.Send)
+                    list.update { all ->
+                        if (data.optBoolean("success")) {
+                            all.map {
+                                if (it.id == id) {
+                                    it.copy(
+                                        acked = true,
+                                        timestampId = data.optString("timestampId"),
+                                    )
+                                } else {
+                                    it
+                                }
+                            }
+                        } else {
+                            all.filterNot { it.id == id }
+                        }
                     }
                 }
 
                 "flag_message" -> {
                     val id = data.optJSONObject("flaggedMessage")?.optString("id")
-                    messages.removeAll { it.id == id }
+                    list.update { all -> all.filterNot { it.id == id } }
                 }
             }
         }
     }
 
     private fun merge(incoming: List<Message>) {
-        val byId = messages.associateBy { it.id }.toMutableMap()
+        val byId = list.value.associateBy { it.id }.toMutableMap()
         incoming.forEach { byId[it.id] = it }
         val sorted = byId.values.filterNot { it.flagged }
             .sortedWith(compareBy({ it.at }, { it.type == "message" || it.type == "gif" }))
-        messages.clear()
-        messages.addAll(sorted)
+        list.value = sorted
     }
 
     private fun request(url: String, method: String = "GET", body: JSONObject? = null): String {

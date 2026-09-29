@@ -1,5 +1,6 @@
 package io.github.rastr1sr.radiomonash
 
+import android.app.Application
 import android.graphics.BitmapFactory
 import android.graphics.ImageDecoder
 import android.graphics.drawable.Animatable
@@ -8,7 +9,7 @@ import android.graphics.drawable.Drawable
 import android.os.Build
 import android.text.format.DateFormat
 import android.widget.ImageView
-import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -18,28 +19,32 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -47,6 +52,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -56,15 +62,20 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.MediaMetadata
+import com.materialkolor.hct.Hct
 import java.io.IOException
 import java.net.URL
 import java.nio.ByteBuffer
@@ -73,6 +84,9 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
 
 private sealed interface Entry {
@@ -91,6 +105,51 @@ private sealed interface Entry {
     }
 }
 
+class ChatViewModel(private val app: Application) : AndroidViewModel(app) {
+    internal val messages: StateFlow<List<Message>> = Chat.messages
+    internal val errors: SharedFlow<ChatError> = Chat.errors
+    val connected: StateFlow<Boolean> = Chat.connected
+    private val nameState = MutableStateFlow(Chat.name(app))
+    private val blockedState = MutableStateFlow(Chat.blocked(app))
+    private val seenState = MutableStateFlow(Chat.lastSeen(app))
+    val name: StateFlow<String?> = nameState
+    val blocked: StateFlow<Map<String, String>> = blockedState
+    val seen: StateFlow<Long> = seenState
+
+    fun open() {
+        seenState.value = Chat.lastSeen(app)
+        Chat.open()
+    }
+
+    fun close() {
+        Chat.seen(app)
+        Chat.close()
+    }
+
+    fun userId() = Chat.userId(app)
+
+    fun send(text: String) = Chat.send(app, text)
+
+    fun rename(name: String, done: (String?) -> Unit) = Chat.setName(app, name) {
+        if (it == null) nameState.value = Chat.name(app)
+        done(it)
+    }
+
+    fun loadOlder() = Chat.loadOlder()
+
+    internal fun report(message: Message) = Chat.report(message)
+
+    internal fun block(message: Message) {
+        Chat.block(app, message)
+        blockedState.value = Chat.blocked(app)
+    }
+
+    fun unblock(userId: String) {
+        Chat.unblock(app, userId)
+        blockedState.value = Chat.blocked(app)
+    }
+}
+
 @Composable
 fun ChatScreen(
     meta: MediaMetadata,
@@ -99,92 +158,120 @@ fun ChatScreen(
     onToggle: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    model: ChatViewModel = viewModel(),
 ) {
-    val context = LocalContext.current
-    DisposableEffect(Unit) {
-        Chat.open()
-        onDispose {
-            Chat.seen(context)
-            Chat.close()
-        }
+    DisposableEffect(model) {
+        model.open()
+        onDispose { model.close() }
     }
-    BackHandler(onBack = onBack)
-    val seen = remember { Chat.lastSeen(context) }
-    var blocked by remember { mutableStateOf(Chat.blocked(context)) }
-    var me by remember { mutableStateOf(Chat.name(context)) }
-    val myId = remember(me) { Chat.userId(context) }
+    val messages by model.messages.collectAsStateWithLifecycle()
+    val connected by model.connected.collectAsStateWithLifecycle()
+    val me by model.name.collectAsStateWithLifecycle()
+    val blocked by model.blocked.collectAsStateWithLifecycle()
+    val seen by model.seen.collectAsStateWithLifecycle()
+    val myId = remember(me) { model.userId() }
     var draft by rememberSaveable { mutableStateOf("") }
     var naming by remember { mutableStateOf(false) }
     var showBlocked by remember { mutableStateOf(false) }
     var confirm by remember { mutableStateOf<Pair<Boolean, Message>?>(null) }
+    val snackbar = remember { SnackbarHostState() }
+    val loadError = stringResource(R.string.chat_failed)
+    val sendError = stringResource(R.string.send_failed)
+    LaunchedEffect(model) {
+        model.errors.collect {
+            snackbar.showSnackbar(
+                if (it ==
+                    ChatError.Load
+                ) {
+                    loadError
+                } else {
+                    sendError
+                },
+            )
+        }
+    }
     val post = {
-        Chat.send(context, draft.trim())
+        model.send(draft.trim())
         draft = ""
     }
     val send = { if (me == null) naming = true else post() }
-    Column(modifier.fillMaxSize().imePadding()) {
-        MiniPlayer(
-            meta,
-            playing,
-            enabled,
-            onToggle,
-            onBack,
-            named = me != null,
-            onRename = { naming = true },
-            onBlockList = { showBlocked = true },
-        )
-        HorizontalDivider()
-        if (!Chat.connected || Chat.failed) {
-            Text(
-                stringResource(if (Chat.failed) R.string.chat_failed else R.string.connecting),
-                Modifier.fillMaxWidth().padding(8.dp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.labelMedium,
+    val connecting = stringResource(R.string.connecting)
+    Scaffold(
+        modifier,
+        topBar = {
+            ChatBar(
+                meta,
+                playing,
+                enabled,
+                onToggle,
+                onBack,
+                named = me != null,
+                onRename = { naming = true },
+                onBlockList = { showBlocked = true },
             )
-        }
-        Messages(
-            Chat.messages.filter { it.userId !in blocked },
-            myId,
-            me,
-            seen,
-            onNick = { draft = "$draft@$it ".trimStart() },
-            onAction = { report, message -> confirm = report to message },
-            modifier = Modifier.weight(1f),
-        )
-        Row(
-            Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
+        },
+        snackbarHost = { SnackbarHost(snackbar) },
+    ) { padding ->
+        Column(
+            Modifier
+                .padding(padding)
+                .consumeWindowInsets(padding)
+                .imePadding()
+                .fillMaxWidth()
+                .wrapContentWidth()
+                .widthIn(max = 840.dp),
         ) {
-            OutlinedTextField(
-                draft,
-                { draft = it },
-                Modifier.weight(1f),
-                placeholder = { Text(stringResource(R.string.message_hint)) },
-                shape = RoundedCornerShape(24.dp),
-                maxLines = 4,
+            if (!connected) {
+                LinearProgressIndicator(
+                    Modifier.fillMaxWidth().semantics { contentDescription = connecting },
+                )
+            }
+            Messages(
+                remember(messages, blocked) { messages.filter { it.userId !in blocked } },
+                myId,
+                me,
+                seen,
+                onNick = { draft = "$draft@$it ".trimStart() },
+                onAction = { report, message -> confirm = report to message },
+                onOlder = model::loadOlder,
+                modifier = Modifier.weight(1f),
             )
-            IconButton(send, enabled = draft.isNotBlank() && Chat.connected) {
-                Icon(painterResource(R.drawable.ic_send), stringResource(R.string.send))
+            Row(
+                Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.xs),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedTextField(
+                    draft,
+                    { draft = it },
+                    Modifier.weight(1f),
+                    placeholder = { Text(stringResource(R.string.message_hint)) },
+                    shape = MaterialTheme.shapes.extraLarge,
+                    maxLines = 4,
+                )
+                IconButton(send, enabled = draft.isNotBlank() && connected) {
+                    Icon(painterResource(R.drawable.ic_send), stringResource(R.string.send))
+                }
             }
         }
     }
     if (naming) {
         NameDialog(
             me,
-            onSave = {
+            onSave = { name, done ->
                 val first = me == null
-                me = Chat.name(context)
-                naming = false
-                if (first && draft.isNotBlank()) post()
+                model.rename(name) { error ->
+                    done(error)
+                    if (error == null) {
+                        naming = false
+                        if (first && draft.isNotBlank()) post()
+                    }
+                }
             },
             onDismiss = { naming = false },
         )
     }
     if (showBlocked) {
-        BlockedDialog(blocked, onUnblock = {
-            Chat.unblock(context, it)
-            blocked = Chat.blocked(context)
-        }, onDismiss = { showBlocked = false })
+        BlockedDialog(blocked, onUnblock = model::unblock, onDismiss = { showBlocked = false })
     }
     confirm?.let { (report, message) ->
         AlertDialog(
@@ -206,12 +293,7 @@ fun ChatScreen(
             },
             confirmButton = {
                 TextButton(onClick = {
-                    if (report) {
-                        Chat.report(message)
-                    } else {
-                        Chat.block(context, message)
-                        blocked = Chat.blocked(context)
-                    }
+                    if (report) model.report(message) else model.block(message)
                     confirm = null
                 }) { Text(stringResource(if (report) R.string.report else R.string.block)) }
             },
@@ -223,7 +305,7 @@ fun ChatScreen(
 }
 
 @Composable
-private fun MiniPlayer(
+private fun ChatBar(
     meta: MediaMetadata,
     playing: Boolean,
     enabled: Boolean,
@@ -234,53 +316,58 @@ private fun MiniPlayer(
     onBlockList: () -> Unit,
 ) {
     var menu by remember { mutableStateOf(false) }
-    Row(
-        Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        IconButton(onBack) {
-            Icon(painterResource(R.drawable.ic_back), stringResource(R.string.back))
-        }
-        Artwork(meta, Modifier.size(40.dp).clip(MaterialTheme.shapes.small), still = true)
-        Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-            Text(
-                meta.title?.toString() ?: stringResource(R.string.app_name),
-                Modifier.basicMarquee(iterations = Int.MAX_VALUE),
-                maxLines = 1,
-                style = MaterialTheme.typography.titleSmall,
-            )
-            Text(
-                (meta.artist ?: meta.station)?.toString().orEmpty(),
-                Modifier.basicMarquee(iterations = Int.MAX_VALUE),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                style = MaterialTheme.typography.bodySmall,
-            )
-        }
-        IconButton(onToggle, enabled = enabled) {
-            Icon(
-                painterResource(if (playing) R.drawable.ic_stop else R.drawable.ic_play),
-                stringResource(if (playing) R.string.stop else R.string.play),
-            )
-        }
-        Box {
-            IconButton({
-                menu = true
-            }) { Icon(painterResource(R.drawable.ic_more), stringResource(R.string.more)) }
-            DropdownMenu(menu, { menu = false }) {
-                if (named) {
-                    DropdownMenuItem({ Text(stringResource(R.string.change_name)) }, {
+    TopAppBar(
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Artwork(meta, Modifier.size(40.dp).clip(MaterialTheme.shapes.small), still = true)
+                Column(Modifier.padding(start = Spacing.sm)) {
+                    Text(
+                        meta.title?.toString() ?: stringResource(R.string.app_name),
+                        Modifier.basicMarquee(iterations = Int.MAX_VALUE),
+                        maxLines = 1,
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Text(
+                        (meta.artist ?: meta.station)?.toString().orEmpty(),
+                        Modifier.basicMarquee(iterations = Int.MAX_VALUE),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
+        },
+        navigationIcon = {
+            IconButton(onBack) {
+                Icon(painterResource(R.drawable.ic_back), stringResource(R.string.back))
+            }
+        },
+        actions = {
+            IconButton(onToggle, enabled = enabled) {
+                Icon(
+                    painterResource(if (playing) R.drawable.ic_stop else R.drawable.ic_play),
+                    stringResource(if (playing) R.string.stop else R.string.play),
+                )
+            }
+            Box {
+                IconButton({ menu = true }) {
+                    Icon(painterResource(R.drawable.ic_more), stringResource(R.string.more))
+                }
+                DropdownMenu(menu, { menu = false }) {
+                    if (named) {
+                        DropdownMenuItem({ Text(stringResource(R.string.change_name)) }, {
+                            menu = false
+                            onRename()
+                        })
+                    }
+                    DropdownMenuItem({ Text(stringResource(R.string.blocked_users)) }, {
                         menu = false
-                        onRename()
+                        onBlockList()
                     })
                 }
-                DropdownMenuItem({ Text(stringResource(R.string.blocked_users)) }, {
-                    menu = false
-                    onBlockList()
-                })
             }
-        }
-    }
+        },
+    )
 }
 
 @Composable
@@ -291,6 +378,7 @@ private fun Messages(
     seen: Long,
     onNick: (String) -> Unit,
     onAction: (Boolean, Message) -> Unit,
+    onOlder: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val zone = ZoneId.systemDefault()
@@ -322,9 +410,10 @@ private fun Messages(
         }.asReversed()
     }
     val list = rememberLazyListState()
+    val older by rememberUpdatedState(onOlder)
     LaunchedEffect(list, rows.size) {
         snapshotFlow { list.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0 }
-            .collect { if (it >= rows.size - 3) Chat.loadOlder() }
+            .collect { if (it >= rows.size - 3) older() }
     }
     val time = timeFormat()
     val locale = LocalConfiguration.current.locales[0]
@@ -335,9 +424,9 @@ private fun Messages(
         modifier.fillMaxWidth(),
         state = list,
         reverseLayout = true,
-        verticalArrangement = Arrangement.spacedBy(2.dp),
+        verticalArrangement = Arrangement.spacedBy(Spacing.xxs),
     ) {
-        items(rows, key = { it.key }) { row ->
+        items(rows, key = { it.key }, contentType = { it::class }) { row ->
             when (row) {
                 is Entry.Day -> Centred(row.date.format(dayFormat))
 
@@ -370,7 +459,7 @@ private fun Messages(
 private fun Centred(text: String, color: Color = MaterialTheme.colorScheme.onSurfaceVariant) {
     Text(
         text,
-        Modifier.fillMaxWidth().padding(vertical = 8.dp, horizontal = 24.dp),
+        Modifier.fillMaxWidth().padding(vertical = Spacing.xs, horizontal = Spacing.lg),
         color = color,
         style = MaterialTheme.typography.labelMedium,
         textAlign = TextAlign.Center,
@@ -401,18 +490,17 @@ private fun Bubble(
     }
     Column(
         Modifier.fillMaxWidth().padding(
-            start = 12.dp,
-            end = 12.dp,
-            top = if (first) 8.dp else 0.dp,
+            start = Spacing.sm,
+            end = Spacing.sm,
+            top = if (first) Spacing.xs else 0.dp,
         ),
         horizontalAlignment = if (mine) Alignment.End else Alignment.Start,
     ) {
         if (first && !mine) {
             Text(
                 message.name,
-                Modifier.clickable { onNick(message.name) }.padding(start = 12.dp, bottom = 2.dp),
+                Modifier.padding(start = Spacing.sm, bottom = Spacing.xxs),
                 color = if (message.fromStation) scheme.tertiary else nickColor(message.userId),
-                fontWeight = FontWeight.Medium,
                 style = MaterialTheme.typography.labelLarge,
             )
         }
@@ -420,35 +508,41 @@ private fun Bubble(
             Surface(
                 Modifier
                     .widthIn(max = 300.dp)
-                    .clip(RoundedCornerShape(18.dp))
+                    .clip(MaterialTheme.shapes.large)
                     .then(
                         if (mention) {
                             Modifier.border(
                                 2.dp,
                                 scheme.primary,
-                                RoundedCornerShape(18.dp),
+                                MaterialTheme.shapes.large,
                             )
                         } else {
                             Modifier
                         },
                     )
-                    .combinedClickable(onClick = {}, onLongClick = { if (!mine) menu = true }),
+                    .combinedClickable(
+                        onLongClickLabel =
+                            stringResource(R.string.message_actions).takeUnless { mine },
+                        onLongClick = { if (!mine) menu = true },
+                        onClickLabel = stringResource(R.string.mention).takeUnless { mine },
+                        onClick = { if (!mine) onNick(message.name) },
+                    ),
                 color = container,
                 contentColor = content,
             ) {
-                Column(Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
+                Column(Modifier.padding(horizontal = Spacing.md, vertical = Spacing.xs)) {
                     message.gif?.let {
                         Gif(
                             it,
                             message.ratio,
-                            Modifier.width(200.dp).clip(RoundedCornerShape(12.dp)),
+                            Modifier.width(200.dp).clip(MaterialTheme.shapes.medium),
                         )
                     }
                     message.text?.let { Text(it, style = MaterialTheme.typography.bodyLarge) }
                     Row(
                         Modifier.align(Alignment.End),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.xxs),
                     ) {
                         Text(
                             time,
@@ -463,7 +557,7 @@ private fun Bubble(
                                 stringResource(
                                     if (message.acked) R.string.sent else R.string.sending,
                                 ),
-                                Modifier.size(14.dp),
+                                Modifier.size(16.dp),
                                 tint = content.copy(alpha = 0.7f),
                             )
                         }
@@ -486,8 +580,8 @@ private fun Bubble(
 
 @Composable
 private fun nickColor(id: String): Color {
-    val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-    return Color.hsv(id.hashCode().mod(360).toFloat(), 0.6f, if (dark) 0.9f else 0.55f)
+    val tone = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) 80.0 else 40.0
+    return Color(Hct.from(id.hashCode().mod(360).toDouble(), 48.0, tone).toInt())
 }
 
 @Composable
@@ -511,7 +605,8 @@ private fun Gif(url: String, ratio: Float, modifier: Modifier = Modifier) {
         }
     }
     val shape = modifier.aspectRatio(ratio.coerceIn(0.3f, 3f))
-    val loaded = drawable ?: return Skeleton(shape)
+    val loaded =
+        drawable ?: return Box(shape.background(MaterialTheme.colorScheme.surfaceContainerHighest))
     AndroidView(
         { ImageView(it).apply { scaleType = ImageView.ScaleType.CENTER_CROP } },
         shape,
@@ -523,8 +618,11 @@ private fun Gif(url: String, ratio: Float, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun NameDialog(current: String?, onSave: () -> Unit, onDismiss: () -> Unit) {
-    val context = LocalContext.current
+private fun NameDialog(
+    current: String?,
+    onSave: (String, (String?) -> Unit) -> Unit,
+    onDismiss: () -> Unit,
+) {
     var name by remember { mutableStateOf(current.orEmpty()) }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
@@ -547,9 +645,9 @@ private fun NameDialog(current: String?, onSave: () -> Unit, onDismiss: () -> Un
             TextButton(
                 onClick = {
                     busy = true
-                    Chat.setName(context, name.trim()) {
+                    onSave(name.trim()) {
                         busy = false
-                        if (it == null) onSave() else error = it
+                        error = it
                     }
                 },
                 enabled = name.isNotBlank() && !busy,
@@ -585,4 +683,19 @@ private fun BlockedDialog(
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.done)) } },
     )
+}
+
+@Preview
+@Composable
+private fun MessagesPreview() {
+    val now = System.currentTimeMillis() / 1000
+    fun message(id: String, user: String, name: String, text: String, type: String = "message") =
+        Message(id, id, user, name, now, type, text, null, 1f, user == "s", flagged = false)
+    val messages = listOf(
+        message("1", "a", "Adam", "Adam joined the chat", "user_joined"),
+        message("2", "a", "Adam", "This show is great"),
+        message("3", "s", "Radio Monash", "Thanks for tuning in!"),
+        message("4", "me", "Lemon", "@Adam agreed"),
+    )
+    LemonScentedTheme { Messages(messages, "me", "Lemon", 0, {}, { _, _ -> }, {}) }
 }

@@ -1,84 +1,80 @@
 package io.github.rastr1sr.radiomonash
 
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
-import androidx.compose.foundation.basicMarquee
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
+import android.app.Application
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemColors
+import androidx.compose.material3.IconToggleButton
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SegmentedListItem
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.rotate
-import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.stateIn
+
+class YouViewModel(app: Application) : AndroidViewModel(app) {
+    internal val stats: StateFlow<Load<Stats>> = poll(60_000) { readStats(app) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), Load.Loading)
+}
 
 @Composable
-fun You(modifier: Modifier = Modifier) {
+fun You(modifier: Modifier = Modifier, model: YouViewModel = viewModel()) {
     val context = LocalContext.current
-    val stats by produceState<Stats?>(null) {
-        while (true) {
-            value = withContext(Dispatchers.IO) { readStats(context) }
-            delay(60_000)
-        }
-    }
-    var open by remember { mutableStateOf<String?>(null) }
+    val load by model.stats.collectAsStateWithLifecycle()
+    val favs by favourites.collectAsStateWithLifecycle()
+    YouContent((load as? Load.Ready)?.value, favs, { toggleFavourite(context, it) }, modifier)
+}
+
+@Composable
+internal fun YouContent(
+    stats: Stats?,
+    favs: List<Fav>,
+    onRemove: (Fav) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     var removing by remember { mutableStateOf<Fav?>(null) }
     var only by remember { mutableStateOf<Boolean?>(null) }
-    val mixed = favourites.any { it.show } && favourites.any { !it.show }
-    val shown = if (mixed && only != null) favourites.filter { it.show == only } else favourites
-    val clear = ListItemDefaults.colors(containerColor = Color.Transparent)
-    LazyColumn(modifier.fillMaxSize().wrapContentWidth().widthIn(max = 600.dp)) {
+    val mixed = favs.any { it.show } && favs.any { !it.show }
+    val shown = if (mixed && only != null) favs.filter { it.show == only } else favs
+    LazyColumn(
+        modifier.fillMaxSize().wrapContentWidth().widthIn(max = 600.dp),
+        contentPadding = PaddingValues(Spacing.md, 0.dp, Spacing.md, Spacing.md),
+        verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
+    ) {
         stats?.let { s ->
             item { Header(stringResource(R.string.this_week)) }
             if (s.weekSeconds < 60 && s.topArtists.isEmpty()) {
@@ -92,32 +88,27 @@ fun You(modifier: Modifier = Modifier) {
                 } else {
                     stringResource(R.string.hours_minutes, minutes / 60, minutes % 60)
                 }
-                ListItem(
-                    headlineContent = { Text(time) },
+                SegmentedListItem(
+                    shapes = ListItemDefaults.segmentedShapes(0, 1),
+                    colors = segmented,
+                    leadingContent = { Icon(painterResource(R.drawable.ic_clock), null) },
                     supportingContent = {
                         Text(pluralStringResource(R.plurals.streak, s.streak, s.streak))
                     },
-                    colors = clear,
-                )
+                ) { Text(time) }
             }
-            if (s.topArtists.isNotEmpty()) {
-                item { Header(stringResource(R.string.top_artists)) }
-                itemsIndexed(s.topArtists) { i, name -> Ranked(i, name, clear) }
-            }
-            if (s.topShows.isNotEmpty()) {
-                item { Header(stringResource(R.string.top_shows)) }
-                itemsIndexed(s.topShows) { i, name -> Ranked(i, name, clear) }
-            }
+            ranked(R.string.top_artists, s.topArtists)
+            ranked(R.string.top_shows, s.topShows)
         }
         item { Header(stringResource(R.string.favourites)) }
-        if (favourites.isEmpty()) {
+        if (favs.isEmpty()) {
             item { Note(stringResource(R.string.no_favourites)) }
         }
         if (mixed) {
             item {
                 Row(
-                    Modifier.padding(horizontal = 24.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    Modifier.padding(bottom = Spacing.xs),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
                 ) {
                     val kinds = listOf(false to R.string.songs, true to R.string.shows)
                     kinds.forEach { (show, label) ->
@@ -130,33 +121,31 @@ fun You(modifier: Modifier = Modifier) {
                 }
             }
         }
-        itemsIndexed(shown, key = { _, fav -> fav.key }) { _, fav ->
-            val isOpen = open == fav.key
-            ListItem(
-                headlineContent = {
-                    Text(fav.title, Modifier.basicMarquee(iterations = Int.MAX_VALUE), maxLines = 1)
-                },
-                modifier = Modifier.clickable { open = if (isOpen) null else fav.key },
-                supportingContent = {
-                    Column {
-                        fav.artist?.let { Text(it, maxLines = 1) }
-                        if (isOpen) {
-                            TextButton(onClick = { removing = fav }) {
-                                Icon(painterResource(heart(true)), null, Modifier.size(18.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text(stringResource(R.string.remove))
-                            }
-                        }
-                    }
-                },
+        itemsIndexed(
+            shown,
+            key = { _, fav -> fav.key },
+            contentType = { _, _ -> "fav" },
+        ) { i, fav ->
+            SegmentedListItem(
+                shapes = ListItemDefaults.segmentedShapes(i, shown.size),
+                colors = segmented,
                 leadingContent = {
                     val art = fav.art.takeUnless { fav.show }
-                    Cover(art, Modifier.size(48.dp).clip(MaterialTheme.shapes.small)) {
+                    Cover(art, Modifier.size(56.dp).clip(MaterialTheme.shapes.small)) {
                         Lemon(fav.show, Modifier.fillMaxSize(), still = true)
                     }
                 },
-                colors = clear,
-            )
+                trailingContent = {
+                    IconToggleButton(true, { removing = fav }) {
+                        Icon(painterResource(heart(true)), stringResource(R.string.favourite))
+                    }
+                },
+                supportingContent = fav.artist?.let {
+                    { Text(it, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                },
+            ) {
+                Text(fav.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
         }
     }
     removing?.let { fav ->
@@ -167,8 +156,7 @@ fun You(modifier: Modifier = Modifier) {
             confirmButton = {
                 TextButton(onClick = {
                     removing = null
-                    open = null
-                    toggleFavourite(context, fav)
+                    onRemove(fav)
                 }) { Text(stringResource(R.string.remove)) }
             },
             dismissButton = {
@@ -178,27 +166,28 @@ fun You(modifier: Modifier = Modifier) {
     }
 }
 
+private fun LazyListScope.ranked(title: Int, names: List<String>) {
+    if (names.isEmpty()) return
+    item { Header(stringResource(title)) }
+    itemsIndexed(names, contentType = { _, _ -> "ranked" }) { i, name ->
+        SegmentedListItem(
+            shapes = ListItemDefaults.segmentedShapes(i, names.size),
+            colors = segmented,
+            leadingContent = { Text("${i + 1}", style = MaterialTheme.typography.labelLarge) },
+        ) { Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+    }
+}
+
 @Composable
-private fun Header(text: String) {
+internal fun Header(text: String) {
     Text(
         text,
         Modifier
             .fillMaxWidth()
-            .padding(start = 24.dp, top = 16.dp, bottom = 4.dp)
+            .padding(start = Spacing.md, top = Spacing.lg, bottom = Spacing.xs)
             .semantics { heading() },
         color = MaterialTheme.colorScheme.primary,
-        style = MaterialTheme.typography.labelLarge,
-    )
-}
-
-@Composable
-private fun Ranked(index: Int, name: String, colors: ListItemColors) {
-    ListItem(
-        headlineContent = { Text(name, maxLines = 1) },
-        leadingContent = {
-            Text("${index + 1}", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        },
-        colors = colors,
+        style = MaterialTheme.typography.titleMedium,
     )
 }
 
@@ -206,7 +195,17 @@ private fun Ranked(index: Int, name: String, colors: ListItemColors) {
 private fun Note(text: String) {
     Text(
         text,
-        Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp),
+        Modifier.fillMaxWidth().padding(horizontal = Spacing.md, vertical = Spacing.xs),
         color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style = MaterialTheme.typography.bodyMedium,
     )
+}
+
+@Preview
+@Composable
+private fun YouPreview() {
+    val stats = Stats(5_400, 3, listOf("Waliens", "British India"), listOf("anti-radio", "IKTR"))
+    val favs =
+        listOf(Fav("Always The Same", "Waliens", null), Fav("anti-radio", null, null, show = true))
+    LemonScentedTheme { YouContent(stats, favs, {}) }
 }

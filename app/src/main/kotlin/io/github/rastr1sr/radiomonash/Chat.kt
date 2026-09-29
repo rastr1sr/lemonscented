@@ -178,7 +178,7 @@ internal class Chat(context: Context) {
                 } else {
                     request(
                         "$API/user/$id/display-name",
-                        "PUT",
+                        "POST",
                         JSONObject().put("newDisplayName", name),
                     )
                 }
@@ -336,7 +336,7 @@ internal class Chat(context: Context) {
         client.newCall(Request.Builder().url(url).method(method, payload).build()).execute().use {
             val text = it.body.string()
             if (it.isSuccessful) return text
-            val reason = runCatching { JSONObject(text).optString("message") }.getOrNull()
+            val reason = runCatching { JSONObject(text).optString("error") }.getOrNull()
             throw IOException(reason?.ifEmpty { null } ?: "HTTP ${it.code}")
         }
     }

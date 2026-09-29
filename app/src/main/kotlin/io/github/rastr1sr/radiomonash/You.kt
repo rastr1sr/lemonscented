@@ -169,7 +169,7 @@ internal fun YouContent(
 private fun LazyListScope.ranked(title: Int, names: List<String>) {
     if (names.isEmpty()) return
     item { Header(stringResource(title)) }
-    itemsIndexed(names, contentType = { _, _ -> "ranked" }) { i, name ->
+    itemsIndexed(names, key = { _, name -> name }, contentType = { _, _ -> "ranked" }) { i, name ->
         SegmentedListItem(
             shapes = ListItemDefaults.segmentedShapes(i, names.size),
             colors = segmented,

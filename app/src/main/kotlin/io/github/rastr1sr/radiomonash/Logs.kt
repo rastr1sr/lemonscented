@@ -42,14 +42,17 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 internal object Logs {
-    class Entry(val at: Instant, val tag: String, val text: String)
+    class Entry(val id: Long, val at: Instant, val tag: String, val text: String)
 
     private val state = MutableStateFlow<List<Entry>>(emptyList())
     val entries: StateFlow<List<Entry>> = state
 
     fun add(tag: String, text: String) {
         Log.i("LemonScented", "$tag: $text")
-        state.update { (it + Entry(Instant.now(), tag, text)).takeLast(500) }
+        state.update {
+            val id = (it.lastOrNull()?.id ?: -1) + 1
+            (it + Entry(id, Instant.now(), tag, text)).takeLast(500)
+        }
     }
 
     fun clear() {
@@ -126,7 +129,7 @@ internal fun LogsScreen(onBack: () -> Unit) {
             ),
             reverseLayout = true,
         ) {
-            items(entries.asReversed()) {
+            items(entries.asReversed(), key = { it.id }) {
                 Text(
                     it.line(),
                     Modifier.fillMaxWidth().padding(vertical = Spacing.xxs),

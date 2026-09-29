@@ -89,14 +89,6 @@ internal fun Lemon(show: Boolean, modifier: Modifier = Modifier, still: Boolean 
             tint = tint,
         )
     }
-    if (!show) {
-        Box(modifier.background(scheme.primary)) { slice(scheme.onPrimary) }
-        return
-    }
-    val ripples = if (still) null else rememberRipples()
-    val shader = remember {
-        if (Build.VERSION.SDK_INT >= 33 && !still) RuntimeShader(DROPS) else null
-    }
     val dark = scheme.surface.luminance() < 0.5f
     val colors = remember(dark) {
         val tones = if (dark) listOf(20.0, 40.0, 30.0) else listOf(90.0, 75.0, 85.0)
@@ -105,6 +97,14 @@ internal fun Lemon(show: Boolean, modifier: Modifier = Modifier, still: Boolean 
         }
     }
     val tint = remember(dark) { Color(Hct.from(270.0, 48.0, if (dark) 90.0 else 10.0).toInt()) }
+    if (!show) {
+        Box(modifier.background(colors[0])) { slice(tint) }
+        return
+    }
+    val ripples = if (still) null else rememberRipples()
+    val shader = remember {
+        if (Build.VERSION.SDK_INT >= 33 && !still) RuntimeShader(DROPS) else null
+    }
     val blobs = remember { List(4) { FloatArray(4) { Random.nextFloat() } } }
     val layer = when {
         ripples == null -> modifier

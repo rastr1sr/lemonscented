@@ -134,8 +134,4 @@
   <string name="song_info">Song info</string>
   <string name="copy">Copy</string>
   <string name="show_info">Show info</string>
-  <string name="show_description">Show description</string>
-  <string name="add_favourite">Add to favourites</string>
-  <string name="in_favourites">In favourites</string>
-  <string name="close">Close</string>
 </resources>

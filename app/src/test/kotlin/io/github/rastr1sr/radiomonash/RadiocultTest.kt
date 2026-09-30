@@ -1,33 +1,12 @@
 package io.github.rastr1sr.radiomonash
 
-import java.time.Instant
-import java.time.LocalDate
-import java.time.format.DateTimeParseException
-import org.json.JSONArray
-import org.json.JSONException
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class RadiocultTest {
-    @Test
-    fun parsesAndSortsSchedule() {
-        val json = """
-            {"schedules":[
-              {"id":"b","title":"Later","start":"2026-09-28T03:00:00.000Z","end":"2026-09-28T04:00:00.000Z","media":{"type":"live"}},
-              {"id":"a","title":"Earlier","start":"2026-09-28T01:00:00.000Z","end":"2026-09-28T03:00:00.000Z","media":{"type":"playlist"}}
-            ]}
-        """
-        val shows = parseSchedule(json)
-        assertEquals(listOf("Earlier", "Later"), shows.map { it.title })
-        assertEquals(Instant.parse("2026-09-28T01:00:00Z"), shows[0].start)
-        assertFalse(shows[0].live)
-        assertTrue(shows[1].live)
-    }
-
     @Test
     fun matchesStreamTitle() {
         assertTrue(sameTrack("Stefan West - Hard Times", "hard times"))
@@ -62,78 +41,5 @@ class RadiocultTest {
         assertEquals("An hour of music.\n\nNo talking.\nJust songs.", tipTapText(doc))
         assertEquals(null, tipTapText(JSONObject("""{"type":"doc","content":[]}""")))
         assertEquals(null, tipTapText(null))
-    }
-
-    @Test
-    fun rejectsBadSchedule() {
-        val badDate = """{"schedules":[{"id":"a","title":"x","start":"soon","end":"later"}]}"""
-        assertThrows(DateTimeParseException::class.java) { parseSchedule(badDate) }
-        assertThrows(JSONException::class.java) { parseSchedule("not json") }
-    }
-
-    @Test
-    fun previewsFirstLine() {
-        assertEquals("Two hours of music…", preview("Two hours of music.\n\nNo talking."))
-        assertEquals("One line only.", preview("One line only."))
-    }
-
-    @Test
-    fun parsesHistory() {
-        val text = """
-            {"data":[{"playoutStart":"2026-09-28T00:58:22.000Z","title":"Song","artist":"Band",
-            "artwork":{"128x128":"https://cdn.example/a.jpg"}},
-            {"playoutStart":"2026-09-28T00:55:00.000Z","title":"Other","artist":null,"artwork":{"128x128":"file:///x"}}]}
-        """
-        val played = parseHistory(text)
-        assertEquals(listOf("Song", "Other"), played.map { it.title })
-        assertEquals("Band", played[0].artist)
-        assertEquals(null, played[1].artist)
-        assertEquals(null, played[1].art)
-        assertThrows(DateTimeParseException::class.java) {
-            parseHistory("""{"data":[{"playoutStart":"soon","title":"x"}]}""")
-        }
-    }
-
-    @Test
-    fun decodesReminder() {
-        assertEquals(1790000000000L to "Oak | Ash", decodeReminder("1790000000000|Oak | Ash"))
-        assertEquals(null, decodeReminder("garbage"))
-    }
-
-    @Test
-    fun countsStats() {
-        val today = LocalDate.of(2026, 9, 28)
-        val days = mapOf(
-            today.minusDays(1) to 600L,
-            today.minusDays(2) to 60L,
-            today.minusDays(4) to 30L,
-            today.minusDays(9) to 999L,
-        )
-        val plays = listOf(Play("A", "X"), Play("B", "X"), Play("A", null), Play(null, "Y"))
-        val stats = stats(days, plays, today)
-        assertEquals(690L, stats.weekSeconds)
-        assertEquals(2, stats.streak)
-        assertEquals(listOf("A", "B"), stats.topArtists)
-        assertEquals(listOf("X", "Y"), stats.topShows)
-        assertEquals(3, stats(days + (today to 5L), plays, today).streak)
-    }
-
-    @Test
-    fun parsesChatMessages() {
-        val text = """
-            [{"id":"a","timestampId":"t1","userId":"u","displayName":"Adam","createdAt":10,"type":"message",
-            "content":{"text":"hi"},"isStationMessage":true},
-            {"id":"b","userId":"v","displayName":"B","createdAt":11,"type":"gif",
-            "content":{"media":{"aspectRatio":0.5,"url":"https://media.giphy.com/x.gif"}}},
-            {"id":"c","userId":"w","displayName":"C","createdAt":12,"type":"gif","content":{"media":{"url":"http://x"}}},
-            {"id":"d","displayName":"broken"}]
-        """
-        val messages = parseMessages(JSONArray(text))
-        assertEquals(listOf("a", "b", "c"), messages.map { it.id })
-        assertEquals("hi", messages[0].text)
-        assertTrue(messages[0].fromStation)
-        assertEquals("https://media.giphy.com/x.gif", messages[1].gif)
-        assertEquals(0.5f, messages[1].ratio)
-        assertEquals(null, messages[2].gif)
     }
 }

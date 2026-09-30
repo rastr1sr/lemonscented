@@ -33,6 +33,11 @@ android {
         compose = true
     }
 
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
+    }
+
     lint {
         warningsAsErrors = true
         disable += setOf("GradleDependency", "NewerVersionAvailable", "AndroidGradlePluginVersion")

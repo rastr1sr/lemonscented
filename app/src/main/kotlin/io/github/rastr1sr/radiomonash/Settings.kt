@@ -254,7 +254,7 @@ internal fun SettingsScreen(
                 .consumeWindowInsets(padding)
                 .fillMaxSize()
                 .wrapContentWidth()
-                .widthIn(max = 600.dp),
+                .widthIn(max = Spacing.content),
             contentPadding = PaddingValues(
                 Spacing.md,
                 0.dp,

@@ -95,7 +95,7 @@ internal fun YouContent(
     val mixed = favs.any { it.show } && favs.any { !it.show }
     val shown = if (mixed && only != null) favs.filter { it.show == only } else favs
     LazyColumn(
-        modifier.fillMaxSize().wrapContentWidth().widthIn(max = 600.dp),
+        modifier.fillMaxSize().wrapContentWidth().widthIn(max = Spacing.content),
         contentPadding = PaddingValues(Spacing.md, 0.dp, Spacing.md, Spacing.md),
         verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
     ) {

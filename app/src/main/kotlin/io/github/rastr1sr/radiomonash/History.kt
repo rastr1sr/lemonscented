@@ -71,7 +71,7 @@ internal class HistoryViewModel(private val library: Library) : ViewModel() {
     val isRefreshing: StateFlow<Boolean> = refreshing
 
     internal val songs: StateFlow<Load<List<Played>>> = attempts.flatMapLatest {
-        poll(60_000) { Recent.load().also { refreshing.value = false } }
+        poll(MINUTE_MS) { Recent.load().also { refreshing.value = false } }
     }.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5_000),
@@ -151,7 +151,7 @@ internal fun HistoryContent(
         modifier = modifier,
     ) {
         LazyColumn(
-            Modifier.fillMaxSize().wrapContentWidth().widthIn(max = 600.dp),
+            Modifier.fillMaxSize().wrapContentWidth().widthIn(max = Spacing.content),
             contentPadding = PaddingValues(Spacing.md, Spacing.xs, Spacing.md, Spacing.md),
             verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
         ) {

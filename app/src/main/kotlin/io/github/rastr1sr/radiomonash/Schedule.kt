@@ -112,7 +112,7 @@ internal class ScheduleViewModel(private val source: Shows, private val reminder
 
     internal val shows: StateFlow<Load<List<Show>>> = attempts.flatMapLatest { attempt ->
         var force = attempt > 0
-        poll(60_000) {
+        poll(MINUTE_MS) {
             source.load(force).also {
                 force = false
                 refreshing.value = false
@@ -212,7 +212,7 @@ internal fun ScheduleContent(
         rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
     val now by produceState(Instant.now()) {
         while (true) {
-            delay(60_000)
+            delay(MINUTE_MS)
             value = Instant.now()
         }
     }
@@ -254,7 +254,7 @@ internal fun ScheduleContent(
         modifier = modifier,
     ) {
         LazyColumn(
-            Modifier.fillMaxSize().wrapContentWidth().widthIn(max = 600.dp),
+            Modifier.fillMaxSize().wrapContentWidth().widthIn(max = Spacing.content),
             contentPadding = PaddingValues(Spacing.md, 0.dp, Spacing.md, Spacing.md),
             verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
         ) {
@@ -302,124 +302,140 @@ internal fun ScheduleContent(
         }
     }
     upcoming.find { it.id == picked }?.let { show ->
-        val start = show.start.atZone(zone)
-        val hasReminder = show.id in reminded
-        val bell = if (hasReminder) R.drawable.ic_bell_on else R.drawable.ic_bell_off
-        val remindLabel = if (hasReminder) R.string.reminder_set else R.string.remind_me
-        val followLabel = if (show.title in followed) R.string.following else R.string.follow
-        Sheet({ picked = null }) { close ->
-            Column(
-                Modifier
-                    .verticalScroll(rememberScrollState())
-                    .padding(start = Spacing.lg, end = Spacing.lg, bottom = Spacing.lg),
-                verticalArrangement = Arrangement.spacedBy(Spacing.md),
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(Spacing.xxs)) {
-                    Text(
-                        listOfNotNull(
-                            start.format(day),
-                            start.format(time),
-                            playlist.takeUnless { show.live },
-                        ).joinToString(" · "),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.labelLarge,
-                    )
-                    Text(show.title, style = MaterialTheme.typography.headlineSmall)
-                }
-                show.description?.let {
-                    Text(
-                        it,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-                    if (show.start > now) {
-                        FilledTonalButton({
-                            close()
-                            asking = show
-                        }) {
-                            Icon(
-                                painterResource(bell),
-                                null,
-                                Modifier.size(ButtonDefaults.IconSize),
-                            )
-                            Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-                            Text(stringResource(remindLabel))
-                        }
-                    }
-                    OutlinedButton({
-                        close()
-                        following = show
-                    }) {
-                        Text(stringResource(followLabel))
-                    }
-                }
-            }
+        ShowSheet(
+            show,
+            "${show.start.atZone(zone).format(day)} · ${show.start.atZone(zone).format(time)}",
+            playlist,
+            reminder = show.id in reminded,
+            followed = show.title in followed,
+            upcoming = show.start > now,
+            onRemind = { asking = show },
+            onFollow = { following = show },
+            onDismiss = { picked = null },
+        )
+    }
+    val ask = { granted: Boolean ->
+        if (!granted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            permission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
     }
     following?.let { show ->
         val isFollowed = show.title in followed
-        AlertDialog(
-            onDismissRequest = { following = null },
-            title = { Text(show.title) },
-            text = {
-                Text(
-                    stringResource(
-                        if (isFollowed) R.string.unfollow_question else R.string.follow_question,
-                    ),
-                )
+        ShowDialog(
+            show.title,
+            if (isFollowed) R.string.unfollow_question else R.string.follow_question,
+            if (isFollowed) R.string.unfollow else R.string.follow,
+            if (isFollowed) R.string.keep else R.string.not_now,
+            onConfirm = {
+                onFollow(show, loaded)
+                ask(isFollowed)
             },
-            confirmButton = {
-                TextButton(onClick = {
-                    following = null
-                    onFollow(show, loaded)
-                    if (!isFollowed && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        permission.launch(Manifest.permission.POST_NOTIFICATIONS)
-                    }
-                }) { Text(stringResource(if (isFollowed) R.string.unfollow else R.string.follow)) }
-            },
-            dismissButton = {
-                TextButton(onClick = { following = null }) {
-                    Text(stringResource(if (isFollowed) R.string.keep else R.string.not_now))
-                }
-            },
+            onDismiss = { following = null },
         )
     }
     asking?.let { show ->
         val hasReminder = show.id in reminded
-        AlertDialog(
-            onDismissRequest = { asking = null },
-            title = { Text(show.title) },
-            text = {
-                Text(
-                    stringResource(
-                        if (hasReminder) R.string.cancel_question else R.string.remind_question,
-                    ),
-                )
+        ShowDialog(
+            show.title,
+            if (hasReminder) R.string.cancel_question else R.string.remind_question,
+            if (hasReminder) R.string.cancel_reminder else R.string.remind_me,
+            if (hasReminder) R.string.keep else R.string.not_now,
+            onConfirm = {
+                onRemind(show)
+                ask(hasReminder)
             },
-            confirmButton = {
-                TextButton(onClick = {
-                    asking = null
-                    onRemind(show)
-                    if (!hasReminder && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        permission.launch(Manifest.permission.POST_NOTIFICATIONS)
-                    }
-                }) {
-                    Text(
-                        stringResource(
-                            if (hasReminder) R.string.cancel_reminder else R.string.remind_me,
-                        ),
-                    )
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { asking = null }) {
-                    Text(stringResource(if (hasReminder) R.string.keep else R.string.not_now))
-                }
-            },
+            onDismiss = { asking = null },
         )
     }
+}
+
+@Composable
+private fun ShowSheet(
+    show: Show,
+    starts: String,
+    playlist: String,
+    reminder: Boolean,
+    followed: Boolean,
+    upcoming: Boolean,
+    onRemind: () -> Unit,
+    onFollow: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Sheet(onDismiss) { close ->
+        Column(
+            Modifier
+                .verticalScroll(rememberScrollState())
+                .padding(start = Spacing.lg, end = Spacing.lg, bottom = Spacing.lg),
+            verticalArrangement = Arrangement.spacedBy(Spacing.md),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(Spacing.xxs)) {
+                Text(
+                    listOfNotNull(starts, playlist.takeUnless { show.live }).joinToString(" · "),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelLarge,
+                )
+                Text(show.title, style = MaterialTheme.typography.headlineSmall)
+            }
+            show.description?.let {
+                Text(
+                    it,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                if (upcoming) {
+                    FilledTonalButton({
+                        close()
+                        onRemind()
+                    }) {
+                        Icon(
+                            painterResource(
+                                if (reminder) R.drawable.ic_bell_on else R.drawable.ic_bell_off,
+                            ),
+                            null,
+                            Modifier.size(ButtonDefaults.IconSize),
+                        )
+                        Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+                        Text(
+                            stringResource(
+                                if (reminder) R.string.reminder_set else R.string.remind_me,
+                            ),
+                        )
+                    }
+                }
+                OutlinedButton({
+                    close()
+                    onFollow()
+                }) {
+                    Text(stringResource(if (followed) R.string.following else R.string.follow))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ShowDialog(
+    title: String,
+    question: Int,
+    confirm: Int,
+    dismiss: Int,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = { Text(stringResource(question)) },
+        confirmButton = {
+            TextButton(onClick = {
+                onDismiss()
+                onConfirm()
+            }) { Text(stringResource(confirm)) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(dismiss)) } },
+    )
 }
 
 @Composable

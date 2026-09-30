@@ -11,7 +11,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,7 +21,6 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -40,6 +38,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.adaptive.currentWindowAdaptiveInfoV2
+import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteItem
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffoldDefaults
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteType
@@ -75,7 +74,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
-import androidx.media3.common.Player
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
@@ -104,6 +102,8 @@ internal object Spacing {
     val lg = 24.dp
     val xl = 32.dp
     val xxl = 48.dp
+    val content = 600.dp
+    val wide = 1040.dp
 }
 
 class MainActivity : ComponentActivity() {
@@ -239,18 +239,20 @@ private fun Home(onSettings: () -> Unit, player: @Composable () -> Unit) {
         layout == NavigationSuiteType.ShortNavigationBarCompact ||
         layout == NavigationSuiteType.ShortNavigationBarMedium
     NavigationSuiteScaffold(
-        navigationSuiteItems = {
+        navigationItems = {
             tabs.forEach {
                 val selected = current == it
-                item(
+                NavigationSuiteItem(
                     selected = selected,
                     onClick = { go(it) },
                     icon = { Icon(painterResource(if (selected) it.selected else it.icon), null) },
                     label = { Text(stringResource(it.label)) },
+                    navigationSuiteType = layout,
                 )
             }
         },
-        layoutType = layout,
+        navigationSuiteType = layout,
+        navigationItemVerticalArrangement = Arrangement.Center,
     ) {
         Scaffold(
             Modifier.nestedScroll(scroll.nestedScrollConnection),

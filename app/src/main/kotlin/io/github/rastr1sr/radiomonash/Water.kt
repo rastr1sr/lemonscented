@@ -103,13 +103,19 @@ internal fun Lemon(show: Boolean, modifier: Modifier = Modifier, still: Boolean 
     }
     val ripples = if (still) null else rememberRipples()
     val shader = remember {
-        if (Build.VERSION.SDK_INT >= 33 && !still) RuntimeShader(DROPS) else null
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            !still
+        ) {
+            RuntimeShader(DROPS)
+        } else {
+            null
+        }
     }
     val blobs = remember { List(4) { FloatArray(4) { Random.nextFloat() } } }
     val layer = when {
         ripples == null -> modifier
 
-        Build.VERSION.SDK_INT >= 33 && shader != null ->
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && shader != null ->
             modifier.ripples(ripples).drops(ripples, shader)
 
         else -> modifier.ripples(ripples)

@@ -76,7 +76,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.MediaMetadata
 import com.materialkolor.hct.Hct
-import java.io.IOException
 import java.net.URL
 import java.nio.ByteBuffer
 import java.time.Instant
@@ -85,7 +84,6 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
 
@@ -105,9 +103,11 @@ private sealed interface Entry {
     }
 }
 
+private const val GROUP_GAP_S = 300
+
 internal class ChatViewModel(private val chat: Chat) : ViewModel() {
     internal val messages: StateFlow<List<Message>> = chat.messages
-    internal val errors: SharedFlow<ChatError> = chat.errors
+    internal val error: StateFlow<ChatError?> = chat.error
     val connected: StateFlow<Boolean> = chat.connected
     private val nameState = MutableStateFlow(chat.name())
     private val blockedState = MutableStateFlow(chat.blocked())
@@ -127,6 +127,8 @@ internal class ChatViewModel(private val chat: Chat) : ViewModel() {
     }
 
     fun userId() = chat.userId()
+
+    fun errorShown() = chat.errorShown()
 
     fun send(text: String) = chat.send(text)
 
@@ -178,10 +180,11 @@ internal fun ChatScreen(
     val snackbar = remember { SnackbarHostState() }
     val loadError = stringResource(R.string.chat_failed)
     val sendError = stringResource(R.string.send_failed)
-    LaunchedEffect(model) {
-        model.errors.collect {
-            snackbar.showSnackbar(if (it == ChatError.Load) loadError else sendError)
-        }
+    val error by model.error.collectAsStateWithLifecycle()
+    LaunchedEffect(error) {
+        val shown = error ?: return@LaunchedEffect
+        snackbar.showSnackbar(if (shown == ChatError.Load) loadError else sendError)
+        model.errorShown()
     }
     val post = {
         model.send(draft.trim())
@@ -212,7 +215,7 @@ internal fun ChatScreen(
                 .imePadding()
                 .fillMaxWidth()
                 .wrapContentWidth()
-                .widthIn(max = 840.dp),
+                .widthIn(max = Spacing.wide),
         ) {
             if (messages.isEmpty() && !connected) {
                 Column(
@@ -411,7 +414,7 @@ private fun Messages(
                 }
                 val first =
                     previous?.let {
-                        it.userId != m.userId || m.at - it.at > 300 ||
+                        it.userId != m.userId || m.at - it.at > GROUP_GAP_S ||
                             it.type != "message"
                     }
                         ?: true
@@ -600,9 +603,9 @@ private fun Gif(url: String, ratio: Float, modifier: Modifier = Modifier) {
     val resources = LocalResources.current
     val drawable by produceState<Drawable?>(null, url) {
         value = withContext(Dispatchers.IO) {
-            try {
+            logged("Chat", "GIF") {
                 val bytes = URL(url).openStream().use { it.readBytes() }
-                if (Build.VERSION.SDK_INT >= 28) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                     ImageDecoder.decodeDrawable(ImageDecoder.createSource(ByteBuffer.wrap(bytes)))
                 } else {
                     BitmapDrawable(
@@ -610,8 +613,6 @@ private fun Gif(url: String, ratio: Float, modifier: Modifier = Modifier) {
                         BitmapFactory.decodeByteArray(bytes, 0, bytes.size),
                     )
                 }
-            } catch (e: IOException) {
-                null
             }
         }
     }

@@ -2,11 +2,8 @@ package io.github.rastr1sr.radiomonash
 
 import android.content.Context
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.os.SystemClock
 import androidx.annotation.OptIn
-import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -26,30 +23,35 @@ import androidx.media3.exoplayer.audio.TeeAudioProcessor
 import androidx.media3.extractor.metadata.icy.IcyInfo
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
-import kotlin.concurrent.thread
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 internal object Sleep {
     private val deadline = MutableStateFlow(0L)
     val until: StateFlow<Long> = deadline
     var stop: (() -> Unit)? = null
-    private val handler = Handler(Looper.getMainLooper())
-    private val fire = Runnable {
-        Logs.add("Sleep", "Timer stopped playback")
-        deadline.value = 0
-        stop?.invoke()
-    }
+    private val scope = MainScope()
+    private var timer: Job? = null
 
     fun set(ms: Long) {
-        handler.removeCallbacks(fire)
+        timer?.cancel()
         deadline.value = if (ms > 0) System.currentTimeMillis() + ms else 0
-        if (ms > 0) handler.postDelayed(fire, ms)
+        if (ms <= 0) return
+        timer = scope.launch {
+            delay(ms)
+            Logs.add("Sleep", "Timer stopped playback")
+            deadline.value = 0
+            stop?.invoke()
+        }
     }
 }
 
@@ -163,16 +165,14 @@ class PlaybackService : MediaSessionService() {
 
     private fun refresh(player: Player, icy: String?) {
         val id = ++request
-        thread {
-            val info = nowPlaying(icy) ?: return@thread
-            ContextCompat.getMainExecutor(this).execute {
-                if (id != request) return@execute
-                if (icy != null && player.isPlaying) {
-                    radio().library.logPlay(info.artist?.toString(), info.station?.toString())
-                }
-                val item = player.getMediaItemAt(0)
-                player.replaceMediaItem(0, item.buildUpon().setMediaMetadata(info).build())
+        scope.launch {
+            val info = withContext(Dispatchers.IO) { nowPlaying(icy) } ?: return@launch
+            if (id != request) return@launch
+            if (icy != null && player.isPlaying) {
+                radio().library.logPlay(info.artist?.toString(), info.station?.toString())
             }
+            val item = player.getMediaItemAt(0)
+            player.replaceMediaItem(0, item.buildUpon().setMediaMetadata(info).build())
         }
     }
 

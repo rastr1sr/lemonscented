@@ -44,6 +44,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import org.json.JSONException
 
+private const val MAX_ENTRIES = 500
+
 internal object Logs {
     class Entry(val id: Long, val at: Instant, val tag: String, val text: String)
 
@@ -54,7 +56,7 @@ internal object Logs {
         Log.i("LemonScented", "$tag: $text")
         state.update {
             val id = (it.lastOrNull()?.id ?: -1) + 1
-            (it + Entry(id, Instant.now(), tag, text)).takeLast(500)
+            (it + Entry(id, Instant.now(), tag, text)).takeLast(MAX_ENTRIES)
         }
     }
 

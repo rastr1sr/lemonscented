@@ -1,17 +1,18 @@
 package io.github.rastr1sr.radiomonash
 
 import android.content.Context
-import android.os.Handler
-import android.os.Looper
 import androidx.core.content.edit
 import java.io.IOException
 import java.util.UUID
-import kotlin.concurrent.thread
-import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -28,6 +29,14 @@ private const val API = "https://api.radiocult.fm/api/chat"
 private val JSON = "application/json".toMediaType()
 private const val SOCKET = "wss://api.radiocult.fm/socket.io/?EIO=4&transport=websocket" +
     "&stationId=$STATION"
+private const val OPEN = "0"
+private const val CONNECT = "40"
+private const val PING = "2"
+private const val PONG = "3"
+private const val EVENT = "42"
+private const val RETRY_MS = 3_000L
+
+internal class ServerError(reason: String) : IOException(reason)
 
 internal data class Message(
     val id: String,
@@ -71,18 +80,18 @@ internal fun parseMessages(array: JSONArray?): List<Message> {
 
 internal enum class ChatError { Load, Send }
 
-internal class Chat(context: Context) {
+internal class Chat(private val context: Context) {
     private val prefs = context.getSharedPreferences("chat", Context.MODE_PRIVATE)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     private val list = MutableStateFlow<List<Message>>(emptyList())
     private val online = MutableStateFlow(false)
     private val more = MutableStateFlow(true)
-    private val problems = MutableSharedFlow<ChatError>(extraBufferCapacity = 4)
+    private val problem = MutableStateFlow<ChatError?>(null)
     val messages: StateFlow<List<Message>> = list
     val connected: StateFlow<Boolean> = online
-    val errors: SharedFlow<ChatError> = problems
+    val error: StateFlow<ChatError?> = problem
 
-    private val main = Handler(Looper.getMainLooper())
     private val client = OkHttpClient()
     private var socket: WebSocket? = null
     private var open = false
@@ -108,6 +117,10 @@ internal class Chat(context: Context) {
         prefs.edit { putStringSet("blocked", set.toSet()) }
     }
 
+    fun errorShown() {
+        problem.value = null
+    }
+
     fun lastSeen() = prefs.getLong("seen", 0)
 
     fun seen() {
@@ -117,16 +130,16 @@ internal class Chat(context: Context) {
     fun open() {
         if (open) return
         open = true
-        thread {
-            val history = logged("Chat", "History") {
-                parseMessages(
-                    JSONObject(request("$API/messages/$STATION")).optJSONArray("messages"),
-                )
+        scope.launch {
+            val history = withContext(Dispatchers.IO) {
+                logged("Chat", "History") {
+                    parseMessages(
+                        JSONObject(request("$API/messages/$STATION")).optJSONArray("messages"),
+                    )
+                }
             }
-            main.post {
-                if (history == null) problems.tryEmit(ChatError.Load) else merge(history)
-                connect()
-            }
+            if (history == null) problem.value = ChatError.Load else merge(history)
+            connect()
         }
     }
 
@@ -141,52 +154,61 @@ internal class Chat(context: Context) {
         val first = list.value.firstOrNull()?.timestampId ?: return
         if (!more.value) return
         more.value = false
-        thread {
-            val page = logged("Chat", "Older messages") {
-                parseMessages(
-                    JSONObject(
-                        request("$API/messages/$STATION?fromTime=$first"),
-                    ).optJSONArray("messages"),
-                )
+        scope.launch {
+            val page = withContext(Dispatchers.IO) {
+                logged("Chat", "Older messages") {
+                    parseMessages(
+                        JSONObject(
+                            request("$API/messages/$STATION?fromTime=$first"),
+                        ).optJSONArray("messages"),
+                    )
+                }
             }
-            main.post {
-                if (page != null) merge(page)
-                more.value = page == null || page.isNotEmpty()
-            }
+            if (page != null) merge(page)
+            more.value = page == null || page.isNotEmpty()
         }
     }
 
     fun setName(name: String, done: (String?) -> Unit) {
         val id = userId()
         val old = this.name()
-        thread {
-            val result = runCatching {
-                val reply = if (id == null) {
-                    request("$API/user", "PUT", JSONObject().put("displayName", name))
-                } else {
-                    request(
-                        "$API/user/$id/display-name",
-                        "POST",
-                        JSONObject().put("newDisplayName", name),
-                    )
+        scope.launch {
+            val user = try {
+                withContext(Dispatchers.IO) {
+                    val reply = if (id == null) {
+                        request("$API/user", "PUT", JSONObject().put("displayName", name))
+                    } else {
+                        request(
+                            "$API/user/$id/display-name",
+                            "POST",
+                            JSONObject().put("newDisplayName", name),
+                        )
+                    }
+                    JSONObject(reply).getJSONObject("user")
                 }
-                val user = JSONObject(reply).getJSONObject("user")
-                user.getString("id") to user.getString("displayName")
+            } catch (e: ServerError) {
+                done(e.message)
+                return@launch
+            } catch (e: IOException) {
+                Logs.add("Chat", "Name: ${e.message}")
+                done(context.getString(R.string.name_failed))
+                return@launch
+            } catch (e: JSONException) {
+                Logs.add("Chat", "Name: ${e.message}")
+                done(context.getString(R.string.name_failed))
+                return@launch
             }
-            main.post {
-                result.onSuccess { (newId, newName) ->
-                    prefs.edit {
-                        putString("id", newId)
-                        putString("name", newName)
-                    }
-                    val notice = when (old) {
-                        null -> "$newName joined the chat"
-                        else -> "$old changed their name to $newName"
-                    }
-                    emit(if (old == null) "user_joined" else "user_name_change", notice)
-                    done(null)
-                }.onFailure { done(it.message) }
+            val newName = user.getString("displayName")
+            prefs.edit {
+                putString("id", user.getString("id"))
+                putString("name", newName)
             }
+            val notice = when (old) {
+                null -> "$newName joined the chat"
+                else -> "$old changed their name to $newName"
+            }
+            emit(if (old == null) "user_joined" else "user_name_change", notice)
+            done(null)
         }
     }
 
@@ -194,7 +216,7 @@ internal class Chat(context: Context) {
 
     fun report(message: Message) {
         list.update { all -> all.filterNot { it.id == message.id } }
-        thread {
+        scope.launch(Dispatchers.IO) {
             try {
                 request(
                     "$API/messages/$STATION/flag",
@@ -220,9 +242,9 @@ internal class Chat(context: Context) {
             .put("flagged", false)
             .put("type", type)
             .put("content", JSONObject().put("text", text))
-        if (socket?.send("42" + JSONArray().put("message").put(json)) != true) {
+        if (socket?.send(EVENT + JSONArray().put("message").put(json)) != true) {
             Logs.add("Chat", "Send failed, not connected")
-            problems.tryEmit(ChatError.Send)
+            problem.value = ChatError.Send
             return
         }
         parseMessage(json)?.let { sent -> list.update { it + sent.copy(acked = false) } }
@@ -235,16 +257,16 @@ internal class Chat(context: Context) {
             object : WebSocketListener() {
                 override fun onMessage(webSocket: WebSocket, text: String) {
                     when {
-                        text.startsWith("0") -> webSocket.send("40")
-
-                        text == "2" -> webSocket.send("3")
-
-                        text.startsWith("40") -> {
+                        text.startsWith(CONNECT) -> {
                             Logs.add("Chat", "Connected")
                             online.value = true
                         }
 
-                        text.startsWith("42") -> event(text.substring(2))
+                        text.startsWith(EVENT) -> event(text.substring(EVENT.length))
+
+                        text.startsWith(OPEN) -> webSocket.send(CONNECT)
+
+                        text == PING -> webSocket.send(PONG)
                     }
                 }
 
@@ -262,9 +284,10 @@ internal class Chat(context: Context) {
     }
 
     private fun retry() {
-        main.post {
+        scope.launch {
             online.value = false
-            if (open) main.postDelayed({ if (open && !online.value) connect() }, 3000)
+            delay(RETRY_MS)
+            if (open && !online.value) connect()
         }
     }
 
@@ -276,7 +299,7 @@ internal class Chat(context: Context) {
             return
         }
         val data = array.optJSONObject(1) ?: return
-        main.post {
+        scope.launch {
             when (array.optString(0)) {
                 "message" -> merge(
                     listOfNotNull(data.optJSONObject("messages")?.let(::parseMessage)),
@@ -284,7 +307,7 @@ internal class Chat(context: Context) {
 
                 "sent" -> {
                     val id = data.optString("id")
-                    if (!data.optBoolean("success")) problems.tryEmit(ChatError.Send)
+                    if (!data.optBoolean("success")) problem.value = ChatError.Send
                     list.update { all ->
                         if (data.optBoolean("success")) {
                             all.map {
@@ -324,8 +347,12 @@ internal class Chat(context: Context) {
         client.newCall(Request.Builder().url(url).method(method, payload).build()).execute().use {
             val text = it.body.string()
             if (it.isSuccessful) return text
-            val reason = runCatching { JSONObject(text).optString("error") }.getOrNull()
-            throw IOException(reason?.ifEmpty { null } ?: "HTTP ${it.code}")
+            val reason = try {
+                JSONObject(text).optString("error").ifEmpty { null }
+            } catch (e: JSONException) {
+                null
+            }
+            throw if (reason != null) ServerError(reason) else IOException("HTTP ${it.code}")
         }
     }
 }

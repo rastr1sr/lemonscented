@@ -48,6 +48,7 @@
   <string name="sending">Sending</string>
   <string name="connecting">Connecting…</string>
   <string name="chat_failed">Couldn\'t reach the chat</string>
+  <string name="name_failed">Couldn\'t save your name</string>
   <string name="send_failed">Couldn\'t send your message</string>
   <string name="new_messages">New messages</string>
   <string name="display_name">Display name</string>
@@ -64,8 +65,9 @@
   <string name="block">Block</string>
   <string name="block_name">Block %s</string>
   <string name="block_question">You won\'t see their messages. You can unblock them from the menu.</string>
-  <string name="search_spotify">Search on Spotify</string>
-  <string name="search_apple">Search on Apple Music</string>
+  <string name="listen_elsewhere">Listen elsewhere</string>
+  <string name="listen_elsewhere_hint">Find it on your music app with song.link</string>
+  <string name="search_results">Search results</string>
   <string name="sleep_timer">Sleep timer</string>
   <string name="stops_at">Stops at %s</string>
   <string name="end_of_show">End of this show</string>

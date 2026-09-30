@@ -5,7 +5,6 @@ import android.content.ClipboardManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
@@ -379,7 +378,10 @@ private fun SongTitle(meta: MediaMetadata, show: Show?) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun Sheet(onDismiss: () -> Unit, content: @Composable (close: () -> Unit) -> Unit) {
-    val state = rememberBottomSheetState(SheetValue.Hidden)
+    val state = rememberBottomSheetState(
+        SheetValue.Hidden,
+        setOf(SheetValue.Hidden, SheetValue.Expanded),
+    )
     val scope = rememberCoroutineScope()
     val close: () -> Unit = { scope.launch { state.hide() }.invokeOnCompletion { onDismiss() } }
     ModalBottomSheet(onDismiss, sheetState = state) {
@@ -408,6 +410,7 @@ private fun ShowInfo(meta: MediaMetadata, show: Show) {
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun SongInfo(
     title: String,
@@ -417,14 +420,16 @@ internal fun SongInfo(
     close: () -> Unit,
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var looking by remember { mutableStateOf(false) }
+    var platforms by remember { mutableStateOf<List<Platform>?>(null) }
     val parts = listOfNotNull(title, artist)
-    val query = Uri.encode(parts.joinToString(" "))
     val clear = ListItemDefaults.colors(containerColor = Color.Transparent)
     val open = { url: String ->
         close()
         context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri()))
     }
-    Column(Modifier.padding(bottom = Spacing.md)) {
+    Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom = Spacing.md)) {
         ListItem(
             supportingContent = artist?.let { { Text(it) } },
             overlineContent = station?.let { { Text(it) } },
@@ -434,11 +439,42 @@ internal fun SongInfo(
             colors = clear,
         ) { Text(title) }
         HorizontalDivider()
-        ListItem({ open("https://open.spotify.com/search/$query") }, colors = clear) {
-            Text(stringResource(R.string.search_spotify))
-        }
-        ListItem({ open("https://music.apple.com/search?term=$query") }, colors = clear) {
-            Text(stringResource(R.string.search_apple))
+        val found = platforms
+        if (found == null) {
+            ListItem(
+                {
+                    looking = true
+                    val spotify = context.packageManager
+                        .getLaunchIntentForPackage("com.spotify.music") != null
+                    scope.launch {
+                        platforms = withContext(Dispatchers.IO) {
+                            platforms(title, artist, spotify)
+                        }
+                    }
+                },
+                enabled = !looking,
+                colors = clear,
+                leadingContent = { Icon(painterResource(R.drawable.ic_headphones), null) },
+                supportingContent = { Text(stringResource(R.string.listen_elsewhere_hint)) },
+                trailingContent = if (looking) {
+                    { LoadingIndicator(Modifier.size(24.dp)) }
+                } else {
+                    null
+                },
+            ) { Text(stringResource(R.string.listen_elsewhere)) }
+        } else {
+            found.forEach { platform ->
+                ListItem(
+                    { open(platform.url) },
+                    colors = clear,
+                    leadingContent = { Icon(painterResource(platform.icon), null) },
+                    supportingContent = if (platform.exact) {
+                        null
+                    } else {
+                        { Text(stringResource(R.string.search_results)) }
+                    },
+                ) { Text(platform.name) }
+            }
         }
         ListItem(
             {
@@ -447,6 +483,7 @@ internal fun SongInfo(
                 close()
             },
             colors = clear,
+            leadingContent = { Icon(painterResource(R.drawable.ic_copy), null) },
         ) { Text(stringResource(R.string.copy)) }
     }
 }
@@ -472,7 +509,7 @@ private fun SleepButton(until: Long, end: Instant?, onSleep: (Long) -> Unit) {
             onSleep(ms)
             close()
         }
-        Column(Modifier.padding(bottom = Spacing.md)) {
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom = Spacing.md)) {
             ListItem(
                 supportingContent = if (on) {
                     {
@@ -485,7 +522,7 @@ private fun SleepButton(until: Long, end: Instant?, onSleep: (Long) -> Unit) {
                 colors = clear,
             ) { Text(label, style = MaterialTheme.typography.titleLarge) }
             listOf(15, 30, 45, 60, 90).forEach { minutes ->
-                ListItem({ choose(minutes * 60_000L) }, colors = clear) {
+                ListItem({ choose(minutes * MINUTE_MS) }, colors = clear) {
                     Text(pluralStringResource(R.plurals.minutes_count, minutes, minutes))
                 }
             }

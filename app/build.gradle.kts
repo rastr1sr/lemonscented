@@ -19,6 +19,14 @@ android {
 
     buildTypes {
         release {
+            System.getenv("KEYSTORE")?.let { path ->
+                signingConfig = signingConfigs.create("release") {
+                    storeFile = file(path)
+                    storePassword = System.getenv("KEYSTORE_PASSWORD")
+                    keyAlias = System.getenv("KEY_ALIAS")
+                    keyPassword = System.getenv("KEY_PASSWORD")
+                }
+            }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))

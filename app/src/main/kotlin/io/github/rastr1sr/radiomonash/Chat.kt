@@ -86,7 +86,6 @@ internal class Chat(private val context: Context) {
 
     private val list = MutableStateFlow<List<Message>>(emptyList())
     private val online = MutableStateFlow(false)
-    private val more = MutableStateFlow(true)
     private val problem = MutableStateFlow<ChatError?>(null)
     val messages: StateFlow<List<Message>> = list
     val connected: StateFlow<Boolean> = online
@@ -95,6 +94,7 @@ internal class Chat(private val context: Context) {
     private val client = OkHttpClient()
     private var socket: WebSocket? = null
     private var open = false
+    private var more = true
 
     fun userId() = prefs.getString("id", null)
 
@@ -131,13 +131,7 @@ internal class Chat(private val context: Context) {
         if (open) return
         open = true
         scope.launch {
-            val history = withContext(Dispatchers.IO) {
-                logged("Chat", "History") {
-                    parseMessages(
-                        JSONObject(request("$API/messages/$STATION")).optJSONArray("messages"),
-                    )
-                }
-            }
+            val history = page("$API/messages/$STATION", "History")
             if (history == null) problem.value = ChatError.Load else merge(history)
             connect()
         }
@@ -152,20 +146,12 @@ internal class Chat(private val context: Context) {
 
     fun loadOlder() {
         val first = list.value.firstOrNull()?.timestampId ?: return
-        if (!more.value) return
-        more.value = false
+        if (!more) return
+        more = false
         scope.launch {
-            val page = withContext(Dispatchers.IO) {
-                logged("Chat", "Older messages") {
-                    parseMessages(
-                        JSONObject(
-                            request("$API/messages/$STATION?fromTime=$first"),
-                        ).optJSONArray("messages"),
-                    )
-                }
-            }
-            if (page != null) merge(page)
-            more.value = page == null || page.isNotEmpty()
+            val older = page("$API/messages/$STATION?fromTime=$first", "Older messages")
+            if (older != null) merge(older)
+            more = older == null || older.isNotEmpty()
         }
     }
 
@@ -334,12 +320,15 @@ internal class Chat(private val context: Context) {
         }
     }
 
+    private suspend fun page(url: String, what: String) = withContext(Dispatchers.IO) {
+        logged("Chat", what) { parseMessages(JSONObject(request(url)).optJSONArray("messages")) }
+    }
+
     private fun merge(incoming: List<Message>) {
         val byId = list.value.associateBy { it.id }.toMutableMap()
         incoming.forEach { byId[it.id] = it }
-        val sorted = byId.values.filterNot { it.flagged }
+        list.value = byId.values.filterNot { it.flagged }
             .sortedWith(compareBy({ it.at }, { it.type == "message" || it.type == "gif" }))
-        list.value = sorted
     }
 
     private fun request(url: String, method: String = "GET", body: JSONObject? = null): String {

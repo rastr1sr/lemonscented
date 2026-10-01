@@ -78,7 +78,7 @@ internal class Reminders(private val context: Context) {
     }
 
     private fun arm(id: String, start: Long, title: String) {
-        alarms.setWindow(AlarmManager.RTC_WAKEUP, start, 5 * 60_000L, alarm(id, title))
+        alarms.setWindow(AlarmManager.RTC_WAKEUP, start, 5 * MINUTE_MS, alarm(id, title))
     }
 
     private fun alarm(id: String, title: String): PendingIntent {

@@ -57,7 +57,7 @@ internal object Sleep {
 
 class PlaybackService : MediaSessionService() {
     private lateinit var session: MediaSession
-    private var request = 0
+    private var lookup: Job? = null
     private var since = 0L
     private val scope = MainScope()
 
@@ -164,10 +164,9 @@ class PlaybackService : MediaSessionService() {
     }
 
     private fun refresh(player: Player, icy: String?) {
-        val id = ++request
-        scope.launch {
+        lookup?.cancel()
+        lookup = scope.launch {
             val info = withContext(Dispatchers.IO) { nowPlaying(icy) } ?: return@launch
-            if (id != request) return@launch
             if (icy != null && player.isPlaying) {
                 radio().library.logPlay(info.artist?.toString(), info.station?.toString())
             }

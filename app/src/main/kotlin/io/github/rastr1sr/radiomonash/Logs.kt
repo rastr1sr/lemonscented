@@ -141,8 +141,8 @@ internal fun LogsScreen(onBack: () -> Unit) {
                 .consumeWindowInsets(padding)
                 .fillMaxSize(),
             contentPadding = PaddingValues(
-                start = Spacing.md,
-                end = Spacing.md,
+                start = margin,
+                end = margin,
                 bottom = Spacing.md + padding.calculateBottomPadding(),
             ),
             reverseLayout = true,

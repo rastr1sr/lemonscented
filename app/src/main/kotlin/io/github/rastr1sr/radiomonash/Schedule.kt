@@ -47,7 +47,6 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -248,71 +247,89 @@ internal fun ScheduleContent(
             Text(stringResource(R.string.no_shows))
         }
     }
-    Refreshable(
-        isRefreshing = refreshing,
-        onRefresh = onRefresh,
+    ListDetail(
+        upcoming.find { it.id == picked },
+        stringResource(R.string.select_show),
+        onClose = { picked = null },
+        detail = { show, close ->
+            val start = show.start.atZone(zone)
+            ShowDetail(
+                show,
+                "${start.format(day)} · ${start.format(time)}",
+                playlist,
+                reminder = show.id in reminded,
+                followed = show.title in followed,
+                upcoming = show.start > now,
+                onRemind = {
+                    close()
+                    asking = show
+                },
+                onFollow = {
+                    close()
+                    following = show
+                },
+            )
+        },
         modifier = modifier,
-    ) {
-        LazyColumn(
-            Modifier.fillMaxSize().wrapContentWidth().widthIn(max = Spacing.content),
-            contentPadding = PaddingValues(Spacing.md, 0.dp, Spacing.md, Spacing.md),
-            verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
+    ) { twoPane ->
+        Refreshable(
+            isRefreshing = refreshing,
+            onRefresh = onRefresh,
         ) {
-            upcoming.groupBy {
-                it.start.atZone(zone).toLocalDate()
-            }.forEach { (date, list) ->
-                item(date.toString(), contentType = "day") { Header(date.format(day)) }
-                itemsIndexed(
-                    list,
-                    key = { _, show -> show.id },
-                    contentType = { _, _ -> "show" },
-                ) { i, show ->
-                    val onNow = now >= show.start && now < show.end
-                    SegmentedListItem(
-                        selected = onNow,
-                        onClick = { picked = show.id },
-                        shapes = ListItemDefaults.segmentedShapes(i, list.size).flat(),
-                        colors = segmented,
-                        leadingContent = {
-                            Text(
-                                if (onNow) nowLabel else show.start.atZone(zone).format(time),
-                                Modifier.width(timeWidth),
-                                style = timeStyle,
-                            )
-                        },
-                        trailingContent = if (show.id in reminded) {
-                            {
-                                Icon(
-                                    painterResource(R.drawable.ic_bell_on),
-                                    stringResource(R.string.reminder_set),
+            LazyColumn(
+                Modifier.fillMaxSize().wrapContentWidth().widthIn(max = Spacing.content),
+                contentPadding = PaddingValues(margin, 0.dp, margin, Spacing.md),
+                verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
+            ) {
+                upcoming.groupBy {
+                    it.start.atZone(zone).toLocalDate()
+                }.forEach { (date, list) ->
+                    item(date.toString(), contentType = "day") { Header(date.format(day)) }
+                    itemsIndexed(
+                        list,
+                        key = { _, show -> show.id },
+                        contentType = { _, _ -> "show" },
+                    ) { i, show ->
+                        val onNow = now >= show.start && now < show.end
+                        SegmentedListItem(
+                            selected = onNow || (twoPane && show.id == picked),
+                            onClick = { picked = show.id },
+                            shapes = ListItemDefaults.segmentedShapes(i, list.size).flat(),
+                            colors = segmented,
+                            leadingContent = {
+                                Text(
+                                    if (onNow) nowLabel else show.start.atZone(zone).format(time),
+                                    Modifier.width(timeWidth),
+                                    style = timeStyle,
                                 )
-                            }
-                        } else {
-                            null
-                        },
-                        overlineContent = if (show.live) null else ({ Text(playlist) }),
-                        supportingContent = show.description?.let {
-                            { Text(preview(it), maxLines = 1, overflow = TextOverflow.Ellipsis) }
-                        },
-                    ) {
-                        Text(show.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            },
+                            trailingContent = if (show.id in reminded) {
+                                {
+                                    Icon(
+                                        painterResource(R.drawable.ic_bell_on),
+                                        stringResource(R.string.reminder_set),
+                                    )
+                                }
+                            } else {
+                                null
+                            },
+                            overlineContent = if (show.live) null else ({ Text(playlist) }),
+                            supportingContent = show.description?.let {
+                                {
+                                    Text(
+                                        preview(it),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            },
+                        ) {
+                            Text(show.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
                     }
                 }
             }
         }
-    }
-    upcoming.find { it.id == picked }?.let { show ->
-        ShowSheet(
-            show,
-            "${show.start.atZone(zone).format(day)} · ${show.start.atZone(zone).format(time)}",
-            playlist,
-            reminder = show.id in reminded,
-            followed = show.title in followed,
-            upcoming = show.start > now,
-            onRemind = { asking = show },
-            onFollow = { following = show },
-            onDismiss = { picked = null },
-        )
     }
     val ask = { granted: Boolean ->
         if (!granted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -350,7 +367,7 @@ internal fun ScheduleContent(
 }
 
 @Composable
-private fun ShowSheet(
+private fun ShowDetail(
     show: Show,
     starts: String,
     playlist: String,
@@ -359,57 +376,46 @@ private fun ShowSheet(
     upcoming: Boolean,
     onRemind: () -> Unit,
     onFollow: () -> Unit,
-    onDismiss: () -> Unit,
 ) {
-    Sheet(onDismiss) { close ->
-        Column(
-            Modifier
-                .verticalScroll(rememberScrollState())
-                .padding(start = Spacing.lg, end = Spacing.lg, bottom = Spacing.lg),
-            verticalArrangement = Arrangement.spacedBy(Spacing.md),
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(Spacing.xxs)) {
-                Text(
-                    listOfNotNull(starts, playlist.takeUnless { show.live }).joinToString(" · "),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.labelLarge,
-                )
-                Text(show.title, style = MaterialTheme.typography.headlineSmall)
-            }
-            show.description?.let {
-                Text(
-                    it,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-                if (upcoming) {
-                    FilledTonalButton({
-                        close()
-                        onRemind()
-                    }) {
-                        Icon(
-                            painterResource(
-                                if (reminder) R.drawable.ic_bell_on else R.drawable.ic_bell_off,
-                            ),
-                            null,
-                            Modifier.size(ButtonDefaults.IconSize),
-                        )
-                        Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-                        Text(
-                            stringResource(
-                                if (reminder) R.string.reminder_set else R.string.remind_me,
-                            ),
-                        )
-                    }
+    Column(
+        Modifier
+            .verticalScroll(rememberScrollState())
+            .padding(start = Spacing.lg, end = Spacing.lg, bottom = Spacing.lg),
+        verticalArrangement = Arrangement.spacedBy(Spacing.md),
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(Spacing.xxs)) {
+            Text(
+                listOfNotNull(starts, playlist.takeUnless { show.live }).joinToString(" · "),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelLarge,
+            )
+            Text(show.title, style = MaterialTheme.typography.headlineSmall)
+        }
+        show.description?.let {
+            Text(
+                it,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+            if (upcoming) {
+                FilledTonalButton(onRemind) {
+                    Icon(
+                        painterResource(
+                            if (reminder) R.drawable.ic_bell_on else R.drawable.ic_bell_off,
+                        ),
+                        null,
+                        Modifier.size(ButtonDefaults.IconSize),
+                    )
+                    Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+                    Text(
+                        stringResource(if (reminder) R.string.reminder_set else R.string.remind_me),
+                    )
                 }
-                OutlinedButton({
-                    close()
-                    onFollow()
-                }) {
-                    Text(stringResource(if (followed) R.string.following else R.string.follow))
-                }
+            }
+            OutlinedButton(onFollow) {
+                Text(stringResource(if (followed) R.string.following else R.string.follow))
             }
         }
     }
@@ -447,39 +453,4 @@ internal fun timeFormat(): DateTimeFormatter {
         clock,
     ).replace(Regex("\\b([hH])\\b"), "$1$1")
     return DateTimeFormatter.ofPattern(hours)
-}
-
-@Preview
-@Composable
-private fun SchedulePreview() {
-    val start = Instant.now().truncatedTo(ChronoUnit.HOURS)
-    val shows = listOf(
-        Show(
-            "a",
-            "Soundscaping",
-            start,
-            start.plusSeconds(3600),
-            true,
-            "Modern instrumental music.",
-        ),
-        Show(
-            "b",
-            "Vegemite on Toast",
-            start.plusSeconds(3600),
-            start.plusSeconds(7200),
-            true,
-            null,
-        ),
-        Show(
-            "c",
-            "Aussie Pub Rock Hour",
-            start.plusSeconds(7200),
-            start.plusSeconds(10800),
-            false,
-            null,
-        ),
-    )
-    LemonScentedTheme {
-        ScheduleContent(Load.Ready(shows), false, setOf("b"), emptySet(), {}, {}, { _, _ -> })
-    }
 }

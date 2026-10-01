@@ -68,7 +68,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.ViewModel
@@ -215,7 +214,7 @@ internal fun ChatScreen(
                 .imePadding()
                 .fillMaxWidth()
                 .wrapContentWidth()
-                .widthIn(max = Spacing.wide),
+                .widthIn(max = 1040.dp),
         ) {
             if (messages.isEmpty() && !connected) {
                 Column(
@@ -385,7 +384,7 @@ private fun ChatBar(
 }
 
 @Composable
-private fun Messages(
+internal fun Messages(
     messages: List<Message>,
     myId: String?,
     me: String?,
@@ -695,19 +694,4 @@ private fun BlockedDialog(
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.done)) } },
     )
-}
-
-@Preview
-@Composable
-private fun MessagesPreview() {
-    val now = System.currentTimeMillis() / 1000
-    fun message(id: String, user: String, name: String, text: String, type: String = "message") =
-        Message(id, id, user, name, now, type, text, null, 1f, user == "s", flagged = false)
-    val messages = listOf(
-        message("1", "a", "Adam", "Adam joined the chat", "user_joined"),
-        message("2", "a", "Adam", "This show is great"),
-        message("3", "s", "Radio Monash", "Thanks for tuning in!"),
-        message("4", "me", "Lemon", "@Adam agreed"),
-    )
-    LemonScentedTheme { Messages(messages, "me", "Lemon", 0, {}, { _, _ -> }, {}) }
 }

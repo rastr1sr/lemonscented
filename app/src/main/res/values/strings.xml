@@ -67,6 +67,8 @@
   <string name="block_question">You won\'t see their messages. You can unblock them from the menu.</string>
   <string name="listen_elsewhere">Listen elsewhere</string>
   <string name="listen_elsewhere_hint">Find it on your music app with song.link</string>
+  <string name="select_show">Select a show</string>
+  <string name="select_song">Select a song</string>
   <string name="search_results">Search results</string>
   <string name="sleep_timer">Sleep timer</string>
   <string name="stops_at">Stops at %s</string>

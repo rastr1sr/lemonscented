@@ -37,7 +37,15 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.adaptive.ExperimentalMaterial3AdaptiveApi
 import androidx.compose.material3.adaptive.currentWindowAdaptiveInfoV2
+import androidx.compose.material3.adaptive.layout.AnimatedPane
+import androidx.compose.material3.adaptive.layout.ListDetailPaneScaffold
+import androidx.compose.material3.adaptive.layout.ListDetailPaneScaffoldDefaults
+import androidx.compose.material3.adaptive.layout.ListDetailPaneScaffoldRole
+import androidx.compose.material3.adaptive.layout.ThreePaneScaffoldDestinationItem
+import androidx.compose.material3.adaptive.layout.calculatePaneScaffoldDirective
+import androidx.compose.material3.adaptive.layout.calculateThreePaneScaffoldValue
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteItem
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffoldDefaults
@@ -51,6 +59,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.movableContentOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -67,6 +77,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
@@ -79,6 +90,7 @@ import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
+import androidx.window.core.layout.WindowSizeClass
 import com.materialkolor.PaletteStyle
 import com.materialkolor.rememberDynamicColorScheme
 import kotlinx.coroutines.Dispatchers
@@ -103,7 +115,65 @@ internal object Spacing {
     val xl = 32.dp
     val xxl = 48.dp
     val content = 600.dp
-    val wide = 1040.dp
+}
+
+internal val margin: Dp
+    @Composable get() = if (
+        currentWindowAdaptiveInfoV2().windowSizeClass
+            .isWidthAtLeastBreakpoint(WindowSizeClass.WIDTH_DP_MEDIUM_LOWER_BOUND)
+    ) {
+        Spacing.lg
+    } else {
+        Spacing.md
+    }
+
+@OptIn(ExperimentalMaterial3AdaptiveApi::class)
+@Composable
+internal fun <T : Any> ListDetail(
+    picked: T?,
+    empty: String,
+    onClose: () -> Unit,
+    detail: @Composable (T, close: () -> Unit) -> Unit,
+    modifier: Modifier = Modifier,
+    list: @Composable (twoPane: Boolean) -> Unit,
+) {
+    val directive = calculatePaneScaffoldDirective(currentWindowAdaptiveInfoV2())
+    val listContent = remember { movableContentOf<Boolean> { list(it) } }
+    val detailContent = remember {
+        movableContentOf<T, () -> Unit> { item, close -> detail(item, close) }
+    }
+    if (directive.maxHorizontalPartitions < 2) {
+        Box(modifier) {
+            listContent(false)
+            picked?.let { item -> Sheet(onClose) { close -> detailContent(item, close) } }
+        }
+        return
+    }
+    ListDetailPaneScaffold(
+        directive = directive,
+        value = calculateThreePaneScaffoldValue(
+            directive.maxHorizontalPartitions,
+            ListDetailPaneScaffoldDefaults.adaptStrategies(),
+            ThreePaneScaffoldDestinationItem<Nothing>(ListDetailPaneScaffoldRole.List),
+        ),
+        listPane = { AnimatedPane { listContent(true) } },
+        detailPane = {
+            AnimatedPane {
+                if (picked == null) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(
+                            empty,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                    }
+                } else {
+                    key(picked) { detailContent(picked) {} }
+                }
+            }
+        },
+        modifier = modifier,
+    )
 }
 
 class MainActivity : ComponentActivity() {

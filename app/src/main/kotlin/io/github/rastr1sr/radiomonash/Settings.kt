@@ -256,9 +256,9 @@ internal fun SettingsScreen(
                 .wrapContentWidth()
                 .widthIn(max = Spacing.content),
             contentPadding = PaddingValues(
-                Spacing.md,
+                margin,
                 0.dp,
-                Spacing.md,
+                margin,
                 Spacing.md + padding.calculateBottomPadding(),
             ),
             verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),

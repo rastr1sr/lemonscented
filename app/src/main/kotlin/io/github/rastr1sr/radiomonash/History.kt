@@ -27,7 +27,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -145,67 +144,57 @@ internal fun HistoryContent(
         },
         onSelection,
     )
-    Refreshable(
-        isRefreshing = refreshing,
-        onRefresh = onRefresh,
+    ListDetail(
+        picked,
+        stringResource(R.string.select_song),
+        onClose = { picked = null },
+        detail = { song, close -> SongInfo(song.title, song.artist, song.art, null, close) },
         modifier = modifier,
-    ) {
-        LazyColumn(
-            Modifier.fillMaxSize().wrapContentWidth().widthIn(max = Spacing.content),
-            contentPadding = PaddingValues(Spacing.md, Spacing.xs, Spacing.md, Spacing.md),
-            verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
+    ) { twoPane ->
+        Refreshable(
+            isRefreshing = refreshing,
+            onRefresh = onRefresh,
         ) {
-            itemsIndexed(songs, key = { _, song -> song.at }) { i, song ->
-                val fav = Fav(song.title, song.artist, song.art)
-                val saved = favs.has(fav)
-                SegmentedListItem(
-                    selected = song.at in selected,
-                    onClick = {
-                        if (selecting) selected = selected.toggle(song.at) else picked = song
-                    },
-                    onLongClick = { selected = selected.toggle(song.at) },
-                    shapes = ListItemDefaults.segmentedShapes(i, songs.size).flat(),
-                    colors = segmented,
-                    leadingContent = {
-                        Cover(song.art, Modifier.size(56.dp).clip(MaterialTheme.shapes.small))
-                    },
-                    trailingContent = {
-                        if (selecting) {
-                            Checkbox(song.at in selected, null)
-                        } else {
-                            IconToggleButton(saved, { onFavourite(fav) }) {
-                                Icon(
-                                    painterResource(heart(saved)),
-                                    stringResource(R.string.favourite),
-                                )
+            LazyColumn(
+                Modifier.fillMaxSize().wrapContentWidth().widthIn(max = Spacing.content),
+                contentPadding = PaddingValues(margin, Spacing.xs, margin, Spacing.md),
+                verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
+            ) {
+                itemsIndexed(songs, key = { _, song -> song.at }) { i, song ->
+                    val fav = Fav(song.title, song.artist, song.art)
+                    val saved = favs.has(fav)
+                    SegmentedListItem(
+                        selected = song.at in selected || (twoPane && song == picked),
+                        onClick = {
+                            if (selecting) selected = selected.toggle(song.at) else picked = song
+                        },
+                        onLongClick = { selected = selected.toggle(song.at) },
+                        shapes = ListItemDefaults.segmentedShapes(i, songs.size).flat(),
+                        colors = segmented,
+                        leadingContent = {
+                            Cover(song.art, Modifier.size(56.dp).clip(MaterialTheme.shapes.small))
+                        },
+                        trailingContent = {
+                            if (selecting) {
+                                Checkbox(song.at in selected, null)
+                            } else {
+                                IconToggleButton(saved, { onFavourite(fav) }) {
+                                    Icon(
+                                        painterResource(heart(saved)),
+                                        stringResource(R.string.favourite),
+                                    )
+                                }
                             }
-                        }
-                    },
-                    overlineContent = { Text(song.at.atZone(zone).format(time)) },
-                    supportingContent = song.artist?.let {
-                        { Text(it, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-                    },
-                ) {
-                    Text(song.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        },
+                        overlineContent = { Text(song.at.atZone(zone).format(time)) },
+                        supportingContent = song.artist?.let {
+                            { Text(it, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                        },
+                    ) {
+                        Text(song.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
                 }
             }
         }
     }
-    picked?.let { song ->
-        Sheet({ picked = null }) { close ->
-            SongInfo(song.title, song.artist, song.art, null, close)
-        }
-    }
-}
-
-@Preview
-@Composable
-private fun HistoryPreview() {
-    val now = Instant.now()
-    val songs = listOf(
-        Played("Always The Same", "Waliens", now, null),
-        Played("Summer Forgive Me", "British India", now.minusSeconds(240), null),
-        Played("kalika", "lithu", now.minusSeconds(480), null),
-    )
-    LemonScentedTheme { HistoryContent(Load.Ready(songs), false, emptyList(), {}, {}) }
 }

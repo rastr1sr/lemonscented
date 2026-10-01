@@ -111,7 +111,10 @@ internal fun Lemon(show: Boolean, modifier: Modifier = Modifier, still: Boolean 
             null
         }
     }
-    val blobs = remember { List(4) { FloatArray(4) { Random.nextFloat() } } }
+    val blobs = remember(still) {
+        val random = if (still) Random(0) else Random
+        List(4) { FloatArray(4) { random.nextFloat() } }
+    }
     val layer = when {
         ripples == null -> modifier
 

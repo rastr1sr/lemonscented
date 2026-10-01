@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
@@ -66,7 +67,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -88,6 +88,8 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+private val PANEL = 480.dp
 
 data class PlayerState(
     val meta: MediaMetadata = MediaMetadata.EMPTY,
@@ -195,18 +197,24 @@ internal fun PlayerPage(
         val cover = Modifier.clip(MaterialTheme.shapes.extraLarge)
         if (wide) {
             Row(
-                Modifier.fillMaxHeight(),
+                Modifier.fillMaxSize(),
                 horizontalArrangement = Arrangement.spacedBy(Spacing.xl),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Artwork(
-                    meta,
-                    Modifier.fillMaxHeight().aspectRatio(1f, true).then(cover),
-                    failed,
-                    still,
-                    indicator = true,
-                )
-                Box(Modifier.weight(1f, fill = false).widthIn(max = 480.dp)) { details() }
+                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                    Artwork(
+                        meta,
+                        Modifier.sizeIn(maxWidth = PANEL, maxHeight = PANEL)
+                            .aspectRatio(1f, true)
+                            .then(cover),
+                        failed,
+                        still,
+                        indicator = true,
+                    )
+                }
+                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                    Box(Modifier.widthIn(max = PANEL)) { details() }
+                }
             }
         } else {
             Column(
@@ -216,7 +224,10 @@ internal fun PlayerPage(
             ) {
                 Artwork(
                     meta,
-                    Modifier.weight(1f, fill = false).aspectRatio(1f).then(cover),
+                    Modifier.weight(1f, fill = false)
+                        .sizeIn(maxWidth = PANEL, maxHeight = PANEL)
+                        .aspectRatio(1f)
+                        .then(cover),
                     failed,
                     still,
                     indicator = true,
@@ -628,16 +639,4 @@ private fun Line(style: TextStyle, content: @Composable () -> Unit) {
     Box(Modifier.height(height), contentAlignment = Alignment.Center) {
         ProvideTextStyle(style, content)
     }
-}
-
-@Preview
-@Composable
-private fun PlayerPreview() {
-    val meta = MediaMetadata.Builder()
-        .setTitle("Always The Same")
-        .setArtist("Waliens")
-        .setStation("Melbourne Music Scene")
-        .build()
-    val state = PlayerState(meta, playing = true, ready = true)
-    LemonScentedTheme { PlayerPage(state, false, 0, null, Look(), {}, {}, {}, {}) }
 }
